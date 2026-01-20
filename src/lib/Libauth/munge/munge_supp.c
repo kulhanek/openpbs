@@ -37,6 +37,7 @@
  * subject to Altair's trademark licensing policies.
  */
 
+#include <libutil.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

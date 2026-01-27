@@ -19,13 +19,15 @@ gcc momctl.c -g -ggdb	-o momctl -L ../lib/Libnet -L ../lib/Libpbs -lnet -lpbs -I
 
 extern char *optarg;
 
+#include <pbs_config.h>
+#include <pbs_ifl.h>
 #include "libpbs.h"
 #include "tpp.h"
 #include "log.h"
 #include "pbs_error.h"
-#include "pbs_ifl.h"
 #include "resmon.h"
-#include "rm.h"
+#include <rm.h>
+#include "pbs_internal.h"
 
 #define MAX_QUERY	128
 #define SHOW_NONE 0xff

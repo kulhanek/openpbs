@@ -9723,7 +9723,7 @@ mom_topology(void)
 							       HWLOC_TOPOLOGY_FLAG_IO_DEVICES);
 #else
 			ret = hwloc_topology_set_io_types_filter(topology,
-								 HWLOC_TYPE_FILTER_KEEP_ALL);
+								 HWLOC_TYPE_FILTER_KEEP_NONE);
 #endif
 		if (ret == 0)
 			ret = hwloc_topology_load(topology);

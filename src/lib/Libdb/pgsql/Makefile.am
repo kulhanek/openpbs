@@ -62,5 +62,3 @@ dist_libexec_SCRIPTS = \
 	pbs_db_schema.sql \
 	pbs_schema_upgrade
 
-dist_sbin_SCRIPTS = \
-	pbs_ds_systemd

@@ -565,7 +565,6 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %exclude %{pbs_prefix}/sbin/pbs_ds_monitor
 %exclude %{pbs_prefix}/sbin/pbs_ds_password
 %exclude %{pbs_prefix}/sbin/pbs_ds_password.bin
-%exclude %{pbs_prefix}/sbin/pbs_ds_systemd
 %exclude %{pbs_prefix}/sbin/pbs_sched
 %exclude %{pbs_prefix}/sbin/pbs_server
 %exclude %{pbs_prefix}/sbin/pbs_server.bin
@@ -610,7 +609,6 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %exclude %{pbs_prefix}/sbin/pbs_ds_monitor
 %exclude %{pbs_prefix}/sbin/pbs_ds_password
 %exclude %{pbs_prefix}/sbin/pbs_ds_password.bin
-%exclude %{pbs_prefix}/sbin/pbs_ds_systemd
 %exclude %{pbs_prefix}/sbin/pbs_idled
 %exclude %{pbs_prefix}/sbin/pbs_mom
 %exclude %{pbs_prefix}/sbin/pbs_rcp

@@ -11,7 +11,7 @@ PartOf=pbs.target
 # foreground after dropping privileges with setpriv(1).  PostgreSQL therefore
 # remains the MainPID and all database children stay in this unit's cgroup.
 Type=exec
-ExecCondition=/usr/libexec/pbs-systemd-helper enabled server
+ExecCondition=@prefix@/libexec/pbs-systemd-helper enabled server
 ExecStart=/bin/sh -c '. ${PBS_CONF_FILE:-/etc/pbs.conf}; exec "$PBS_EXEC/sbin/pbs_dataservice" systemd-start'
 
 # ExecStartPost is part of activation.  pbs-server.service cannot start until

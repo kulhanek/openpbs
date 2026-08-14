@@ -7,7 +7,7 @@ PartOf=pbs.target
 
 [Service]
 Type=forking
-ExecCondition=/usr/libexec/pbs-systemd-helper enabled comm
+ExecCondition=@prefix@/libexec/pbs-systemd-helper enabled comm
 ExecStart=/bin/sh -c '. ${PBS_CONF_FILE:-/etc/pbs.conf}; exec "$PBS_EXEC/sbin/pbs_comm"'
 Restart=on-failure
 RestartSec=5s

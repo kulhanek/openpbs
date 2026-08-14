@@ -8,8 +8,8 @@ PartOf=pbs.target
 
 [Service]
 Type=forking
-ExecCondition=/usr/libexec/pbs-systemd-helper enabled sched
-ExecStart=/usr/libexec/pbs-systemd-helper start-sched
+ExecCondition=@prefix@/libexec/pbs-systemd-helper enabled sched
+ExecStart=@prefix@/libexec/pbs-systemd-helper start-sched
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=90s

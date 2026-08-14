@@ -7,7 +7,7 @@ Before=pbs-comm.service pbs-mom.service pbs-dataservice.service pbs-server.servi
 
 [Service]
 Type=oneshot
-ExecStart=/usr/libexec/pbs-systemd-helper prepare
+ExecStart=@prefix@/libexec/pbs-systemd-helper prepare
 RemainAfterExit=yes
 
 [Install]

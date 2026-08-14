@@ -360,11 +360,14 @@ AC_CONFIG_FILES([
 	src/cmds/scripts/Makefile
 	src/cmds/scripts/modulefile
 	src/cmds/scripts/pbs_habitat
-	src/cmds/scripts/pbs_init.d
-	src/cmds/scripts/pbs_reload
 	src/cmds/scripts/pbs_poerun
 	src/cmds/scripts/pbs_postinstall
-	src/cmds/scripts/pbs.service
+	src/cmds/scripts/pbs-comm.service
+	src/cmds/scripts/pbs-dataservice.service
+	src/cmds/scripts/pbs-mom.service
+	src/cmds/scripts/pbs-prepare.service
+	src/cmds/scripts/pbs-sched.service
+	src/cmds/scripts/pbs-server.service
 	src/cmds/scripts/pbsrun.poe
 	src/hooks/Makefile
 	src/iff/Makefile

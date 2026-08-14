@@ -1,0 +1,38 @@
+[Unit]
+Description=OpenPBS PostgreSQL data service
+Documentation=man:pbs(8)
+Requires=pbs-prepare.service
+After=pbs-prepare.service network-online.target local-fs.target remote-fs.target
+Before=pbs-server.service
+PartOf=pbs.target
+
+[Service]
+# pbs_dataservice systemd-start execs the real PostgreSQL postmaster in the
+# foreground after dropping privileges with setpriv(1).  PostgreSQL therefore
+# remains the MainPID and all database children stay in this unit's cgroup.
+Type=exec
+ExecCondition=/usr/libexec/pbs-systemd-helper enabled server
+ExecStart=/bin/sh -c '. ${PBS_CONF_FILE:-/etc/pbs.conf}; exec "$PBS_EXEC/sbin/pbs_dataservice" systemd-start'
+
+# ExecStartPost is part of activation.  pbs-server.service cannot start until
+# PostgreSQL is actually accepting connections rather than merely forked.
+ExecStartPost=/bin/sh -c '. ${PBS_CONF_FILE:-/etc/pbs.conf}; exec "$PBS_EXEC/sbin/pbs_dataservice" systemd-wait'
+
+# PostgreSQL maps SIGINT to "fast" shutdown, equivalent to the old
+# "pg_ctl stop -m fast".  KillMode=mixed sends the signal to the postmaster
+# first; pbs_ds_monitor notices its exit and releases pbs_dblock itself.
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStartSec=90s
+TimeoutStopSec=180s
+
+# Replace the legacy /proc/self/oom_score_adj handling.  This applies directly
+# to PostgreSQL and descendants under systemd supervision.
+OOMScoreAdjust=-1000
+
+# Restart an unexpectedly crashed datastore, but not a deliberate clean stop.
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=pbs-server.service

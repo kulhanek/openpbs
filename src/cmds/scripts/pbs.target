@@ -1,0 +1,10 @@
+[Unit]
+Description=OpenPBS services
+Documentation=man:pbs(8)
+Requires=pbs-prepare.service
+Wants=pbs-comm.service pbs-mom.service pbs-server.service pbs-sched.service
+After=network-online.target pbs-prepare.service
+StopWhenUnneeded=no
+
+[Install]
+WantedBy=multi-user.target

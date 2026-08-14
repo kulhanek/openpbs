@@ -1,0 +1,14 @@
+[Unit]
+Description=OpenPBS host and PBS_HOME preparation
+Documentation=man:pbs(8)
+After=network-online.target local-fs.target remote-fs.target nss-lookup.target
+Wants=network-online.target
+Before=pbs-comm.service pbs-mom.service pbs-dataservice.service pbs-server.service pbs-sched.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/pbs-systemd-helper prepare
+RemainAfterExit=yes
+
+[Install]
+WantedBy=pbs.target

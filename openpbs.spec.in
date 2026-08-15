@@ -519,9 +519,11 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %exclude %{_sysconfdir}/profile.d/ptl.sh
 %attr(644, root, root) %{_unitdir}/pbs-comm.service
 %attr(644, root, root) %{_unitdir}/pbs-dataservice.service
+%attr(644, root, root) %{_unitdir}/pbs-datastore-init.service
 %attr(644, root, root) %{_unitdir}/pbs-mom.service
 %attr(644, root, root) %{_unitdir}/pbs-prepare.service
 %attr(644, root, root) %{_unitdir}/pbs-sched.service
+%attr(644, root, root) %{_unitdir}/pbs-server-init.service
 %attr(644, root, root) %{_unitdir}/pbs-server.service
 %attr(644, root, root) %{_unitdir}/pbs.target
 #%exclude %{pbs_prefix}/unsupported/*.pyc
@@ -546,9 +548,11 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %config %{pbs_prefix}/lib/init.d/limits.pbs_mom
 %attr(644, root, root) %{_unitdir}/pbs-comm.service
 %attr(644, root, root) %{_unitdir}/pbs-dataservice.service
+%attr(644, root, root) %{_unitdir}/pbs-datastore-init.service
 %attr(644, root, root) %{_unitdir}/pbs-mom.service
 %attr(644, root, root) %{_unitdir}/pbs-prepare.service
 %attr(644, root, root) %{_unitdir}/pbs-sched.service
+%attr(644, root, root) %{_unitdir}/pbs-server-init.service
 %attr(644, root, root) %{_unitdir}/pbs-server.service
 %attr(644, root, root) %{_unitdir}/pbs.target
 %exclude %{pbs_prefix}/bin/printjob_svr.bin

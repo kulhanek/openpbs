@@ -75,15 +75,18 @@ dist_sysprofile_DATA = \
 unitfiledir = @_unitdir@
 
 dist_unitfile_DATA = \
-	pbs-prepare.service \
 	pbs-comm.service \
 	pbs-dataservice.service \
+	pbs-datastore-init.service \
 	pbs-mom.service \
+	pbs-prepare.service \
+	pbs-sched.service \
+	pbs-server-init.service \
 	pbs-server.service \
-	pbs-sched.service \ 
 	pbs.target
 
 dist_libexec_SCRIPTS = \
+    pbs-systemd-helper \
 	pbs_habitat \
 	pbs_postinstall \
 	pbs_preuninstall \
@@ -94,7 +97,6 @@ dist_bin_SCRIPTS = \
 	printjob
 
 dist_sbin_SCRIPTS = \
-    pbs-systemd-helper \
 	pbs_dataservice \
 	pbs_ds_password \
 	pbs_server \

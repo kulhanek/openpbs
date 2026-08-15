@@ -1,0 +1,309 @@
+#!/bin/bash
+set -u
+
+conf=${PBS_CONF_FILE:-/etc/pbs.conf}
+if [[ ! -r "$conf" ]]; then
+    echo "PBS configuration is not readable: $conf" >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+. "$conf"
+
+: "${PBS_EXEC:?PBS_EXEC is undefined in $conf}"
+: "${PBS_HOME:?PBS_HOME is undefined in $conf}"
+PBS_MOM_HOME=${PBS_MOM_HOME:-$PBS_HOME}
+pbslibdir="$PBS_EXEC/lib"
+[[ -d "$pbslibdir" ]] || pbslibdir="$PBS_EXEC/lib64"
+
+state_dir="$PBS_HOME/server_priv"
+new_db_marker="$state_dir/.systemd-new-datastore"
+
+lc_host_name() {
+    printf '%s\n' "$1" | cut -d, -f1 | cut -d: -f1 | cut -d. -f1 | tr '[:upper:]' '[:lower:]'
+}
+
+check_hostname() {
+    getent hosts "$1" >/dev/null 2>&1 || host "$1" >/dev/null 2>&1
+}
+
+get_server_hostname() {
+    local shn
+    if [[ -z "${PBS_PRIMARY:-}" || -z "${PBS_SECONDARY:-}" ]]; then
+        shn=${PBS_SERVER_HOST_NAME:-${PBS_SERVER:-}}
+    else
+        shn=$PBS_PRIMARY
+    fi
+    lc_host_name "$shn"
+}
+
+check_core() {
+    local dir=$1 file max=0 seq
+    [[ -d "$dir" ]] || return 0
+    shopt -s nullglob
+    for file in "$dir"/core_*; do
+        seq=${file##*_}
+        [[ $seq =~ ^[0-9]+$ ]] && (( 10#$seq > max )) && max=$((10#$seq))
+    done
+    for file in "$dir"/core "$dir"/core.[0-9]*; do
+        [[ -e "$file" ]] || continue
+        ((max++))
+        mv -- "$file" "$dir/core_$(printf '%04d' "$max")"
+        echo "Renamed stale core file $file" >&2
+    done
+    shopt -u nullglob
+}
+
+check_maxsys() {
+    local cfg="$PBS_MOM_HOME/mom_priv/config" val
+    [[ -f "$cfg" ]] || return 0
+    grep -q '^\$restrict_user_maxsysid' "$cfg" && return 0
+    [[ -f /etc/login.defs ]] || return 0
+    val=$(awk '$1 == "SYSTEM_UID_MAX" {print $2; exit}' /etc/login.defs)
+    [[ -n "$val" ]] || val=$(awk '$1 == "UID_MIN" {print $2-1; exit}' /etc/login.defs)
+    [[ -n "$val" ]] && printf '$restrict_user_maxsysid %s\n' "$val" >> "$cfg"
+}
+
+is_secondary_host() {
+    local me sec
+    [[ -n "${PBS_SECONDARY:-}" ]] || return 1
+    me=$(lc_host_name "${PBS_LEAF_NAME:-$(hostname)}")
+    sec=$(lc_host_name "$PBS_SECONDARY")
+    [[ "$me" == "$sec" ]]
+}
+
+enabled_component() {
+    local var value
+    case "$1" in
+        server) var=PBS_START_SERVER ;;
+        mom)    var=PBS_START_MOM ;;
+        sched)  var=PBS_START_SCHED ;;
+        comm)   var=PBS_START_COMM ;;
+        *) echo "Unknown component: $1" >&2; return 2 ;;
+    esac
+    value=${!var:-0}
+    [[ "$value" =~ ^[0-9]+$ ]] && (( value > 0 ))
+}
+
+pbs_version() {
+    "$PBS_EXEC/bin/qstat" --version | sed -e 's/^.* = //'
+}
+
+# Phase 1: host/PBS_HOME setup only.  It must not touch PostgreSQL or start
+# pbs_server.  This phase is therefore safe to order before pbs-dataservice.
+prepare() {
+    local server_hostname version
+
+    [[ -d "$PBS_EXEC" ]] || { echo "PBS_EXEC does not exist: $PBS_EXEC" >&2; return 1; }
+
+    server_hostname=$(get_server_hostname)
+    if [[ -z "$server_hostname" || "$server_hostname" == CHANGE_THIS_TO_PBS_SERVER_HOSTNAME ]]; then
+        echo "Invalid PBS server hostname in $conf" >&2
+        return 1
+    fi
+    check_hostname "$server_hostname" || {
+        echo "PBS server hostname does not resolve: $server_hostname" >&2
+        return 1
+    }
+
+    # pbs_postinstall creates/repairs the PBS_HOME directory tree but, unlike
+    # pbs_habitat, does not start PBS services.  On a normal packaged install
+    # PBS_HOME already exists and this path is skipped.
+    if [[ ! -d "$PBS_HOME" || ! -f "$PBS_HOME/pbs_environment" ]]; then
+        [[ -x "$PBS_EXEC/libexec/pbs_postinstall" ]] || {
+            echo "$PBS_EXEC/libexec/pbs_postinstall is missing" >&2
+            return 1
+        }
+        version=$(pbs_version) || return 1
+        if enabled_component server; then
+            "$PBS_EXEC/libexec/pbs_postinstall" server "$version" "$PBS_EXEC" "$PBS_HOME" "" sameconf || return 1
+        elif enabled_component mom; then
+            "$PBS_EXEC/libexec/pbs_postinstall" execution "$version" "$PBS_EXEC" "$PBS_HOME" "" sameconf || return 1
+        fi
+    fi
+
+    check_core "$PBS_HOME/server_priv"
+    check_core "$PBS_HOME/sched_priv"
+    check_core "$PBS_MOM_HOME/mom_priv"
+
+    if enabled_component mom; then
+        check_maxsys
+    fi
+}
+
+# Phase 2: create/upgrade the PostgreSQL datastore while the native
+# pbs-dataservice unit is still stopped.  This extracts the DB portion of
+# pbs_habitat from the server bootstrap path.
+prepare_datastore() {
+    local rc version
+
+    enabled_component server || return 0
+
+    [[ -x "$PBS_EXEC/libexec/pbs_db_utility" ]] || {
+        echo "$PBS_EXEC/libexec/pbs_db_utility is missing" >&2
+        return 1
+    }
+    [[ -d "$state_dir" ]] || {
+        echo "PBS server state directory does not exist: $state_dir" >&2
+        return 1
+    }
+
+    # pbs_db_utility install_db returns 0 for a newly created datastore and 2
+    # when a datastore already exists (the convention used by pbs_habitat).
+    "$PBS_EXEC/libexec/pbs_db_utility" install_db
+    rc=$?
+    case "$rc" in
+        0)
+            : > "$new_db_marker"
+            ;;
+        2)
+            rm -f "$new_db_marker"
+            "$PBS_EXEC/libexec/pbs_db_utility" upgrade_db || return $?
+            ;;
+        *)
+            echo "Error initializing the PBS datastore (pbs_db_utility rc=$rc)" >&2
+            return "$rc"
+            ;;
+    esac
+
+    # Do not write pbs_version yet.  It is the transaction-complete marker and
+    # is written only after the DB-dependent server preparation succeeds.
+    version=$(pbs_version) || return 1
+    [[ -n "$version" ]] || { echo "Could not determine PBS version" >&2; return 1; }
+}
+
+# Phase 3: DB-dependent first-server initialization.  pbs-dataservice is
+# already active and ready when this function is called.
+prepare_server() {
+    local server server_started=0 tries rc version
+
+    enabled_component server || return 0
+
+    # Existing installations need no create-time qmgr work.  Database schema
+    # upgrade has already been handled by prepare_datastore().
+    if [[ -f "$new_db_marker" ]]; then
+        echo "Initializing a new PBS server database"
+
+        "$PBS_EXEC/sbin/pbs_server" -t create >/dev/null
+        rc=$?
+        if (( rc != 0 )); then
+            echo "pbs_server -t create failed (rc=$rc)" >&2
+            return "$rc"
+        fi
+        server_started=1
+
+        tries=3
+        while (( tries >= 0 )); do
+            if "$PBS_EXEC/bin/qmgr" <<'QMGR_CREATE' >/dev/null
+create queue workq
+QMGR_CREATE
+            then
+                break
+            fi
+            ((tries--))
+            sleep 2
+        done
+        if (( tries < 0 )); then
+            echo "Could not create the default workq queue" >&2
+            return 1
+        fi
+
+        "$PBS_EXEC/bin/qmgr" <<'QMGR_DEFAULTS' >/dev/null || return 1
+set queue workq queue_type = Execution
+set queue workq enabled = True
+set queue workq started = True
+set server default_queue = workq
+QMGR_DEFAULTS
+
+        # Preserve the useful pbs_habitat behaviour for a combined
+        # server+MOM node: create its node object if it is not present.
+        if enabled_component mom; then
+            server=$(get_server_hostname)
+            server=${server%%.*}
+            if ! "$PBS_EXEC/bin/pbsnodes" localhost >/dev/null 2>&1 && \
+               ! "$PBS_EXEC/bin/pbsnodes" "$server" >/dev/null 2>&1; then
+                printf 'create node %s\n' "$server" | "$PBS_EXEC/bin/qmgr" >/dev/null || return 1
+            fi
+        fi
+    fi
+
+    if (( server_started )); then
+        "$PBS_EXEC/bin/qterm" || return 1
+    fi
+
+    version=$(pbs_version) || return 1
+    printf '%s\n' "$version" > "$PBS_HOME/pbs_version" || return 1
+    rm -f "$new_db_marker"
+}
+
+start_server() {
+    local rc
+    if [[ -f "$pbslibdir/init.d/limits.pbs_server" ]]; then
+        # shellcheck disable=SC1090
+        . "$pbslibdir/init.d/limits.pbs_server"
+    fi
+    "$PBS_EXEC/sbin/pbs_server"
+    rc=$?
+    if (( rc == 4 )); then
+        echo "pbs_server returned 4; retrying once after 30 seconds" >&2
+        sleep 30
+        "$PBS_EXEC/sbin/pbs_server"
+        return $?
+    fi
+    return "$rc"
+}
+
+start_mom() {
+    if [[ -f "$pbslibdir/init.d/limits.pbs_mom" ]]; then
+        # shellcheck disable=SC1090
+        . "$pbslibdir/init.d/limits.pbs_mom"
+    fi
+    exec "$PBS_EXEC/sbin/pbs_mom" -p
+}
+
+start_sched() {
+    if [[ -f "$pbslibdir/init.d/limits.pbs_sched" ]]; then
+        # shellcheck disable=SC1090
+        . "$pbslibdir/init.d/limits.pbs_sched"
+    fi
+    exec "$PBS_EXEC/sbin/pbs_sched"
+}
+
+stop_server() {
+    local pidfile pid active_server me
+    if is_secondary_host; then
+        pidfile="$PBS_HOME/server_priv/server.lock.secondary"
+    else
+        pidfile="$PBS_HOME/server_priv/server.lock"
+    fi
+    pid=$(cat "$pidfile" 2>/dev/null || true)
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+    kill -0 "$pid" 2>/dev/null || return 0
+
+    active_server=$("$PBS_EXEC/bin/qstat" -Bf 2>/dev/null | awk -F' = ' '/server_host = / {print $2; exit}')
+    active_server=$(lc_host_name "${active_server:-}")
+    me=$(lc_host_name "${PBS_LEAF_NAME:-$(hostname)}")
+
+    if [[ -n "$active_server" && "$me" == "$active_server" ]]; then
+        if [[ -r "$PBS_HOME/server_priv/qmgr_shutdown" ]]; then
+            "$PBS_EXEC/bin/qmgr" < "$PBS_HOME/server_priv/qmgr_shutdown" || true
+        fi
+        "$PBS_EXEC/bin/qterm" -t quick || kill -TERM "$pid"
+    else
+        kill -TERM "$pid"
+    fi
+}
+
+case "${1:-}" in
+    enabled)           enabled_component "${2:?component required}" ;;
+    prepare)           prepare ;;
+    prepare-datastore) prepare_datastore ;;
+    prepare-server)    prepare_server ;;
+    start-server)      start_server ;;
+    start-mom)         start_mom ;;
+    start-sched)       start_sched ;;
+    stop-server)       stop_server ;;
+    *)
+        echo "Usage: $0 {enabled COMPONENT|prepare|prepare-datastore|prepare-server|start-server|start-mom|start-sched|stop-server}" >&2
+        exit 2
+        ;;
+esac

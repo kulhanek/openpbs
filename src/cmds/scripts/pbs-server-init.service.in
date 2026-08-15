@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenPBS server database-dependent initialization
+Documentation=man:pbs(8)
+Requires=pbs-dataservice.service
+After=pbs-dataservice.service
+Before=pbs-server.service
+PartOf=pbs.target
+
+[Service]
+Type=oneshot
+ExecCondition=@prefix@/libexec/pbs-systemd-helper enabled server
+ExecStart=@prefix@/libexec/pbs-systemd-helper prepare-server
+RemainAfterExit=yes

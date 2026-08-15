@@ -115,6 +115,64 @@ backupdir() {
 	fi
 }
 
+
+#---------------------------------------------------------------------------------------------------
+# Temporary datastore bootstrap helpers.
+#
+# Datastore creation and schema upgrades require a live PostgreSQL server, but
+# the persistent pbs-dataservice.service must not be started until this utility
+# has completed.  Start a private temporary postmaster directly with pg_ctl.
+# Because it is launched without su/PAM, it remains in the calling systemd
+# unit's cgroup.  It is always stopped before pbs_db_utility exits normally.
+run_as_dbuser() {
+	_user="$1"
+	shift
+
+	_setpriv=`command -v setpriv 2>/dev/null`
+	if [ -z "${_setpriv}" ]; then
+		echo "setpriv is required for PBS datastore initialization"
+		return 1
+	fi
+
+	if [ -n "${PGSQL_LIBSTR:-}" ]; then
+		"${_setpriv}" --reuid="${_user}" --regid="${_user}" --init-groups \
+			/bin/sh -c "${PGSQL_LIBSTR} exec \"\$@\"" sh "$@"
+	else
+		"${_setpriv}" --reuid="${_user}" --regid="${_user}" --init-groups "$@"
+	fi
+}
+
+bootstrap_db_start() {
+	_user="$1"
+	_bindir="$2"
+	_datadir="$3"
+	_port="$4"
+
+	if [ ! -x "${_bindir}/pg_ctl" ]; then
+		echo "${_bindir}/pg_ctl not found"
+		return 1
+	fi
+
+	echo "Starting temporary PBS Data Service.."
+	run_as_dbuser "${_user}" "${_bindir}/pg_ctl" \
+		-D "${_datadir}" -o "-p ${_port}" -w start
+}
+
+bootstrap_db_stop() {
+	_user="$1"
+	_bindir="$2"
+	_datadir="$3"
+
+	if [ ! -x "${_bindir}/pg_ctl" ]; then
+		echo "${_bindir}/pg_ctl not found"
+		return 1
+	fi
+
+	echo "Stopping temporary PBS Data Service.."
+	run_as_dbuser "${_user}" "${_bindir}/pg_ctl" \
+		-D "${_datadir}" -m fast -w stop
+}
+
 # DB Upgrade functions
 upgrade_pbs_database() {
 	sys_pgsql_ver=$1
@@ -228,7 +286,7 @@ upgrade_db() {
 	CWD=`pwd`
 	cd "${data_dir}"
 	#Perform pg_upgrade -c to check if we can upgrade the cluster or not
-	err=`su ${user} -c "/bin/sh -c '${PGSQL_LIBSTR} ${inst_dir}/bin/pg_upgrade -b ${old_inst_dir}/bin -B ${inst_dir}/bin -d ${old_data_dir} -D ${data_dir} -c'" 2>&1`
+	err=`run_as_dbuser "${user}" "${inst_dir}/bin/pg_upgrade" -b "${old_inst_dir}/bin" -B "${inst_dir}/bin" -d "${old_data_dir}" -D "${data_dir}" -c 2>&1`
 	if [ $? -ne 0 ]; then
 		echo "Refer pg_upgrade log files at $PBS_HOME/datastore/pg_upgrade_internal.log,"
 		echo "$PBS_HOME/datastore/pg_upgrade_server.log and"
@@ -249,7 +307,7 @@ upgrade_db() {
 	fi
 
 	#Perform pg_upgrade for database upgrade
-	err=`su ${user} -c "/bin/sh -c '${PGSQL_LIBSTR} ${inst_dir}/bin/pg_upgrade -b ${old_inst_dir}/bin -B ${inst_dir}/bin -d ${old_data_dir} -D ${data_dir}'" 2>&1`
+	err=`run_as_dbuser "${user}" "${inst_dir}/bin/pg_upgrade" -b "${old_inst_dir}/bin" -B "${inst_dir}/bin" -d "${old_data_dir}" -D "${data_dir}" 2>&1`
 	if [ $? -ne 0 ]; then
 		echo "Refer pg_upgrade log files at $PBS_HOME/datastore/pg_upgrade_internal.log,"
 		echo "$PBS_HOME/datastore/pg_upgrade_server.log and"
@@ -269,31 +327,34 @@ upgrade_db() {
 		return 1
 	fi
 
-	# start the dataservice
-	${server_ctl} start > /dev/null
+	# Start a private temporary postmaster for post-upgrade maintenance.
+	bootstrap_db_start "${user}" "${inst_dir}/bin" "${data_dir}" "${PBS_DATA_SERVICE_PORT}" > /dev/null
 	if [ $? -ne 0 ]; then
-		echo "Error starting PBS Data Service"
+		echo "Error starting temporary PBS Data Service"
 		return 1
 	fi
 
 	# Optimizer statistics are not transferred by pg_upgrade, so do it manually.
 	ENVSTR="PGPORT=${PBS_DATA_SERVICE_PORT}; export PGPORT; PGHOST=${PBS_SERVER}; export PGHOST; PGUSER=${user}; export PGUSER; "
-	err=`su ${user} -c "/bin/sh -c '${PGSQL_LIBSTR} ${ENVSTR} ${data_dir}/analyze_new_cluster.sh'"`
+	err=`run_as_dbuser "${user}" /usr/bin/env \
+		PGPORT="${PBS_DATA_SERVICE_PORT}" PGHOST="${PBS_SERVER}" PGUSER="${user}" \
+		"${data_dir}/analyze_new_cluster.sh" 2>&1`
 
 	# Update locale of pbs database to C
 	if [ ${change_locale} -eq 1 ]; then
-		${inst_dir}/bin/psql -A -t -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${user} -c "update pg_database set datcollate='C', datctype='C'" > /dev/null
+		run_as_dbuser "${user}" "${inst_dir}/bin/psql" -A -t \
+			-p "${PBS_DATA_SERVICE_PORT}" -d pbs_datastore -U "${user}" \
+			-c "update pg_database set datcollate='C', datctype='C'" > /dev/null
 		ret=$?
 		if [ $ret -ne 0 ]; then
 			return $ret
 		fi
 	fi
 
-	# stop the dataservice
-	${server_ctl} stop > /dev/null
+	# Stop the temporary postmaster before returning to the systemd bootstrap.
+	bootstrap_db_stop "${user}" "${inst_dir}/bin" "${data_dir}" > /dev/null
 	if [ $? -ne 0 ]; then
-		echo "Error stopping PBS Data Service"
-		kill -s SIGTERM `ps -ef | grep "${inst_dir}/bin/postgres" | grep -v grep | awk '{if ($3 == 1) print $2}'`
+		echo "Error stopping temporary PBS Data Service"
 		return 1
 	fi
 	revoke_db_trust_login "${data_dir}"
@@ -430,7 +491,7 @@ pbs_install_db () {
 	# change directory to data_dir to ensure that we don't get cd errors from postgres later
 	cd ${data_dir}
 
-	err=`su ${user} -c "/bin/sh -c '${PGSQL_LIBSTR} ${bin_dir}/initdb -D ${data_dir} -U \"${user}\" -E SQL_ASCII ${locale}'" 2>&1`
+	err=`run_as_dbuser "${user}" "${bin_dir}/initdb" -D "${data_dir}" -U "${user}" -E SQL_ASCII ${locale} 2>&1`
 
 	if [ $? -ne 0 ]; then
 		echo "$err"
@@ -502,47 +563,31 @@ pbs_install_db () {
 	# Add IPV6 local address to pg_hba.conf so the pbs_ds_password is fine
 	echo "host    all             all             ::1/128                 trust" >> ${data_dir}/pg_hba.conf
 
-	${server_ctl} start
+	# Start a private temporary postmaster.  pg_ctl -w waits until it is ready.
+	bootstrap_db_start "${user}" "${bin_dir}" "${data_dir}" "${port}"
 	if [ $? -ne 0 ]; then
-		echo "Error starting PBS Data Service"
-		cleanup
-		exit 1
-	fi
-	# Wait for postgres to start.
-	tries=5
-	while [ $tries -ge 0 ]
-	do
-		${server_ctl} status > /dev/null 2>&1
-		ret=$?
-		if [ $ret -eq 0 ]; then
-			break
-		fi
-		tries=$((tries-1))
-		sleep 2
-	done
-	if [ $ret -ne 0 ]; then
-		echo "Error starting PBS Data Service"
+		echo "Error starting temporary PBS Data Service"
 		cleanup
 		exit 1
 	fi
 
-	err=`su ${user} -c "/bin/sh -c '${PGSQL_LIBSTR} ${bin_dir}/createdb -p ${port} pbs_datastore'" 2>&1`
+	err=`run_as_dbuser "${user}" "${bin_dir}/createdb" -p "${port}" pbs_datastore 2>&1`
 
 	if [ $? -ne 0 ]; then
 		echo "$err"
 		echo "Error creating PBS datastore"
-		${server_ctl} stop > /dev/null 2>&1
+		bootstrap_db_stop "${user}" "${bin_dir}" "${data_dir}" > /dev/null 2>&1
 		cleanup
 		exit 1
 	fi
 
 	# now install the pbs datastore schema onto the datastore
-	err=`su ${user} -c "/bin/sh -c '${PGSQL_LIBSTR} ${bin_dir}/psql -p ${port} -d pbs_datastore -U \"${user}\" -f ${schema}'" 2>&1`
+	err=`run_as_dbuser "${user}" "${bin_dir}/psql" -p "${port}" -d pbs_datastore -U "${user}" -f "${schema}" 2>&1`
 
 	if [ $? -ne 0 ]; then
 		echo $err
 		echo "Error initializing PBS datastore"
-		${server_ctl} stop > /dev/null 2>&1
+		bootstrap_db_stop "${user}" "${bin_dir}" "${data_dir}" > /dev/null 2>&1
 		cleanup
 		exit 1
 	fi
@@ -551,17 +596,15 @@ pbs_install_db () {
 	if [ $? -ne 0 ]; then
 		echo $err
 		echo "Error setting password for PBS Data Service"
-		${server_ctl} stop > /dev/null 2>&1
+		bootstrap_db_stop "${user}" "${bin_dir}" "${data_dir}" > /dev/null 2>&1
 		cleanup
 		exit 1
 	fi
 
-	# stop the dataservice
-	${server_ctl} stop
+	# Stop the private temporary postmaster before returning.
+	bootstrap_db_stop "${user}" "${bin_dir}" "${data_dir}"
 	if [ $? -ne 0 ]; then
-		echo $err
-		echo "Error stopping PBS Data Service"
-		kill -TERM `ps -ef | grep "${bin_dir}/postgres" | grep -v grep | awk '{if ($3 == 1) print $2}'`
+		echo "Error stopping temporary PBS Data Service"
 		cleanup
 		exit 1
 	fi
@@ -627,12 +670,26 @@ if [ "${opt}" = "upgrade_db" ]; then
 		fi
 	fi
 
-	# do schema upgrade
-	set_db_trust_login "${PBS_HOME}/datastore"
+	# Schema upgrade also requires a live datastore.  Keep it private to this
+	# initialization transaction; the persistent systemd service starts later.
+	data_dir="${PBS_HOME}/datastore"
+	user="${PBS_DATA_SERVICE_USER}"
+	bin_dir="${PGSQL_BIN}"
+	set_db_trust_login "${data_dir}"
+	if [ $? -ne 0 ]; then
+		exit 1
+	fi
+	bootstrap_db_start "${user}" "${bin_dir}" "${data_dir}" "${PBS_DATA_SERVICE_PORT}"
+	if [ $? -ne 0 ]; then
+		revoke_db_trust_login "${data_dir}"
+		echo "Error starting temporary PBS Data Service for schema upgrade"
+		exit 1
+	fi
 	${PBS_EXEC}/libexec/pbs_schema_upgrade ${PBS_DATA_SERVICE_PORT} ${PBS_DATA_SERVICE_USER}
 	ret=$?
 	if [ $ret -ne 0 ]; then
-		revoke_db_trust_login "${PBS_HOME}/datastore"
+		bootstrap_db_stop "${user}" "${bin_dir}" "${data_dir}" > /dev/null 2>&1
+		revoke_db_trust_login "${data_dir}"
 		echo "Failed to upgrade PBS Datastore"
 		exit $ret
 	fi
@@ -645,12 +702,18 @@ if [ "${opt}" = "upgrade_db" ]; then
 		if [ $? -ne 0 ]; then
 			echo $err
 			echo "Error setting password for PBS Data Service"
-			${server_ctl} stop > /dev/null 2>&1
-			revoke_db_trust_login "${PBS_HOME}/datastore"
+			bootstrap_db_stop "${user}" "${bin_dir}" "${data_dir}" > /dev/null 2>&1
+			revoke_db_trust_login "${data_dir}"
 			exit 1
 		fi
 	fi
-	revoke_db_trust_login "${PBS_HOME}/datastore"
+	bootstrap_db_stop "${user}" "${bin_dir}" "${data_dir}"
+	if [ $? -ne 0 ]; then
+		echo "Error stopping temporary PBS Data Service after schema upgrade"
+		revoke_db_trust_login "${data_dir}"
+		exit 1
+	fi
+	revoke_db_trust_login "${data_dir}"
 
 elif [ "${opt}" = "install_db" ]; then
 	opt_err=0

@@ -16,6 +16,7 @@ TimeoutStartSec=90s
 TimeoutStopSec=180s
 KillSignal=SIGTERM
 Delegate=yes
+DelegateSubgroup=mom
 
 [Install]
 WantedBy=pbs.target

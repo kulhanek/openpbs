@@ -850,6 +850,10 @@ class resource_type
 	bool is_time:1;
 
 	bool is_atleast:1; /* comparable resource - at least this value */
+	bool is_atmost:1;  /* comparable resource - at most this value */
+	bool is_strany:1;  /* comparable resource - string array, any match */
+	bool is_strall:1;  /* comparable resource - string array, all matches required */
+
 	resource_type();
 };
 

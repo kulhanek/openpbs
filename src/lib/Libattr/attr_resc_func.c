@@ -296,10 +296,14 @@ verify_resc_name(char *name)
  * @retval -2 when errors that got autocorrected
  */
 int
-verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag, const char *rescname, char *buf, int buflen, int autocorrect)
+verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag,
+			   const char *rescname, char *buf, int buflen,
+			   int autocorrect)
 {
 	char fchar;
 	int correction = 0;
+	int cmp_num_flags;
+	int cmp_str_flags;
 
 	if (*pflag_ir == 2) { /* both flag i and r are set */
 		if (autocorrect) {
@@ -315,21 +319,27 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag, const 
 		}
 	}
 	*pflag_ir = 0;
+
 	if ((*presc_flag & (ATR_DFLAG_FNASSN | ATR_DFLAG_ANASSN)) &&
-	    ((*presc_flag & ATR_DFLAG_CVTSLT) == 0)) {
+		((*presc_flag & ATR_DFLAG_CVTSLT) == 0)) {
 		if (*presc_flag & ATR_DFLAG_ANASSN)
 			fchar = 'n';
 		else
 			fchar = 'f';
+
 		if (autocorrect) {
-			snprintf(buf, buflen, "Erroneous to have flag '%c' without "
-					      "'h' on resource \"%s\"; adding 'h' flag.",
-				 fchar, rescname);
+			*presc_flag |= ATR_DFLAG_CVTSLT;
+
+			snprintf(buf, buflen,
+				"Erroneous to have flag '%c' without "
+				"'h' on resource \"%s\"; adding 'h' flag.",
+				fchar, rescname);
 			correction = 1;
 		} else {
-			snprintf(buf, buflen, "Erroneous to have flag '%c' without "
-					      "'h' on resource \"%s\".",
-				 fchar, rescname);
+			snprintf(buf, buflen,
+				"Erroneous to have flag '%c' without "
+				"'h' on resource \"%s\".",
+				fchar, rescname);
 			return -1;
 		}
 	}
@@ -350,9 +360,15 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag, const 
 		}
 	}
 
-	if (((resc_type == ATR_TYPE_BOOL) || (resc_type == ATR_TYPE_STR) || (resc_type == ATR_TYPE_ARST)) &&
-	    ((*presc_flag & (ATR_DFLAG_RASSN | ATR_DFLAG_FNASSN | ATR_DFLAG_ANASSN)) != 0)) {
-		*presc_flag &= ~(ATR_DFLAG_RASSN | ATR_DFLAG_FNASSN | ATR_DFLAG_ANASSN);
+	if (((resc_type == ATR_TYPE_BOOL) ||
+	     (resc_type == ATR_TYPE_STR) ||
+	     (resc_type == ATR_TYPE_ARST)) &&
+	    ((*presc_flag &
+	      (ATR_DFLAG_RASSN | ATR_DFLAG_FNASSN | ATR_DFLAG_ANASSN)) != 0)) {
+
+		*presc_flag &=
+			~(ATR_DFLAG_RASSN | ATR_DFLAG_FNASSN | ATR_DFLAG_ANASSN);
+
 		if (autocorrect) {
 			snprintf(buf, buflen, "Erroneous to have flag 'n', 'f', "
 					      "or 'q' on resource \"%s\" which is type string, "
@@ -366,6 +382,103 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag, const 
 				 rescname);
 			return -1;
 		}
+	}
+
+	/*
+	 * Comparator resource flags:
+	 *
+	 *   l - numeric comparison: available >= request
+	 *   u - numeric comparison: available <= request
+	 *   o - string_array comparison: any requested item matches
+	 *   a - string_array comparison: all requested items match
+	 */
+	cmp_num_flags =
+		*presc_flag & (ATR_DFLAG_ATLEAST | ATR_DFLAG_ATMOST);
+
+	cmp_str_flags =
+		*presc_flag & (ATR_DFLAG_STRANY | ATR_DFLAG_STRALL);
+
+	/* 'l' and 'u' are mutually exclusive */
+	if (cmp_num_flags ==
+	    (ATR_DFLAG_ATLEAST | ATR_DFLAG_ATMOST)) {
+		snprintf(buf, buflen,
+			 "Erroneous to have flags 'l' and 'u' "
+			 "on resource \"%s\".",
+			 rescname);
+		return -1;
+	}
+
+	/* 'o' and 'a' are mutually exclusive */
+	if (cmp_str_flags ==
+	    (ATR_DFLAG_STRANY | ATR_DFLAG_STRALL)) {
+		snprintf(buf, buflen,
+			 "Erroneous to have flags 'o' and 'a' "
+			 "on resource \"%s\".",
+			 rescname);
+		return -1;
+	}
+
+	/* numeric and string comparator modes cannot be mixed */
+	if (cmp_num_flags && cmp_str_flags) {
+		snprintf(buf, buflen,
+			 "Erroneous to combine numeric comparison flags "
+			 "'l' or 'u' with string comparison flags "
+			 "'o' or 'a' on resource \"%s\".",
+			 rescname);
+		return -1;
+	}
+
+	/* 'l' and 'u' are valid only for numeric resource types */
+	if (cmp_num_flags &&
+	    resc_type != ATR_TYPE_LONG &&
+	    resc_type != ATR_TYPE_FLOAT &&
+	    resc_type != ATR_TYPE_SIZE) {
+
+		snprintf(buf, buflen,
+			 "Flags 'l' and 'u' are valid only for resource "
+			 "types long, float, or size; resource \"%s\" "
+			 "has an incompatible type.",
+			 rescname);
+		return -1;
+	}
+
+	/*
+	 * Comparator numeric resources are non-consumable.
+	 * Therefore accounting flags q/f/n are incompatible with l/u.
+	 */
+	if (cmp_num_flags &&
+	    (*presc_flag &
+	     (ATR_DFLAG_RASSN | ATR_DFLAG_FNASSN | ATR_DFLAG_ANASSN))) {
+
+		if (autocorrect) {
+			*presc_flag &=
+				~(ATR_DFLAG_RASSN |
+				  ATR_DFLAG_FNASSN |
+				  ATR_DFLAG_ANASSN);
+
+			snprintf(buf, buflen,
+				 "Erroneous to combine flag 'l' or 'u' "
+				 "with 'q', 'f', or 'n' on resource \"%s\"; "
+				 "ignoring 'q', 'f', and 'n' flags.",
+				 rescname);
+			correction = 1;
+		} else {
+			snprintf(buf, buflen,
+				 "Erroneous to combine flag 'l' or 'u' "
+				 "with 'q', 'f', or 'n' on resource \"%s\".",
+				 rescname);
+			return -1;
+		}
+	}
+
+	/* 'o' and 'a' are valid only for string_array resources */
+	if (cmp_str_flags && resc_type != ATR_TYPE_ARST) {
+		snprintf(buf, buflen,
+			 "Flags 'o' and 'a' are valid only for resource "
+			 "type string_array; resource \"%s\" has an "
+			 "incompatible type.",
+			 rescname);
+		return -1;
 	}
 
 	if (autocorrect && correction)
@@ -440,6 +553,12 @@ parse_resc_flags(char *val, int *flag_ir_p, int *resc_flag_p)
 			flag_ir++;
 		} else if (*val == 'l') {
 			resc_flag |= ATR_DFLAG_ATLEAST;
+		} else if (*val == 'u') {
+			resc_flag |= ATR_DFLAG_ATMOST;
+		} else if (*val == 'o') {
+			resc_flag |= ATR_DFLAG_STRANY;
+		} else if (*val == 'a') {
+			resc_flag |= ATR_DFLAG_STRALL;
 		} else
 			return -1;
 		val++;

@@ -122,16 +122,19 @@ extern "C" {
 #define ATR_DFLAG_WRACC 0x6AA  /* Write access mask */
 #define ATR_DFLAG_ACCESS 0x7ff /* Mask access flags */
 
-#define ATR_DFLAG_ALTRUN 0x0800	 /* (job) attr/resc is alterable in Run state  */
-#define ATR_DFLAG_NOSAVM 0x1000	 /* object not saved on attribute modify       */
-#define ATR_DFLAG_SELEQ 0x2000	 /* attribute is only selectable eq/ne	      */
-#define ATR_DFLAG_RASSN 0x4000	 /* resc in server/queue resources_assigned    */
-#define ATR_DFLAG_ANASSN 0x8000	 /* resource in all node resources_assigned  */
-#define ATR_DFLAG_FNASSN 0x10000 /* resource in 1st node resources_assigned  */
-#define ATR_DFLAG_CVTSLT 0x20000 /* used in or converted to select directive */
-#define ATR_DFLAG_SCGALT 0x40000 /* if altered during sched cycle dont run job*/
-#define ATR_DFLAG_HIDDEN 0x80000 /* if set, keep attribute hidden to client */
-#define ATR_DFLAG_ATLEAST 0x100000 /*  */
+#define ATR_DFLAG_ALTRUN    0x0800	 /* (job) attr/resc is alterable in Run state  */
+#define ATR_DFLAG_NOSAVM    0x1000	 /* object not saved on attribute modify       */
+#define ATR_DFLAG_SELEQ     0x2000	 /* attribute is only selectable eq/ne	      */
+#define ATR_DFLAG_RASSN     0x4000	 /* resc in server/queue resources_assigned    */
+#define ATR_DFLAG_ANASSN    0x8000	 /* resource in all node resources_assigned  */
+#define ATR_DFLAG_FNASSN   0x10000   /* resource in 1st node resources_assigned  */
+#define ATR_DFLAG_CVTSLT   0x20000   /* used in or converted to select directive */
+#define ATR_DFLAG_SCGALT   0x40000   /* if altered during sched cycle dont run job*/
+#define ATR_DFLAG_HIDDEN   0x80000   /* if set, keep attribute hidden to client */
+#define ATR_DFLAG_ATLEAST 0x100000   /* compare non-consumable resources, available >= request */
+#define ATR_DFLAG_ATMOST  0x200000   /* compare non-consumable resources, available <= request */
+#define ATR_DFLAG_STRANY  0x400000   /* compare non-consumable resources, string list, any match */
+#define ATR_DFLAG_STRALL  0x800000   /* compare non-consumable resources, string list, all matches required */
 
 #define SHUT_MASK 0xf
 #define SHUT_WHO_MASK 0x1f0

@@ -110,24 +110,45 @@ query_resources(int pbs_sd)
 
 	for (cur_bs = bs; cur_bs != NULL; cur_bs = cur_bs->next) {
 		int flags = NO_FLAGS;
+		int type = ATR_TYPE_NONE;
 		resource_type rtype;
 
 		for (attrp = cur_bs->attribs; attrp != NULL; attrp = attrp->next) {
 			char *endp;
 
 			if (!strcmp(attrp->name, ATTR_RESC_TYPE)) {
-				int num = strtol(attrp->value, &endp, 10);
-				rtype = conv_rsc_type(num);
+				type = strtol(attrp->value, &endp, 10);
 			} else if (!strcmp(attrp->name, ATTR_RESC_FLAG)) {
 				flags = strtol(attrp->value, &endp, 10);
 			}
-
-			if (flags & ATR_DFLAG_ATLEAST) {
-				rtype.is_atleast = 1;
-				rtype.is_consumable = 0;
-				rtype.is_non_consumable = 1;
-			}
 		}
+
+		rtype = conv_rsc_type(type);
+
+		if (flags & ATR_DFLAG_ATLEAST) {
+			rtype.is_atleast = 1;
+			rtype.is_consumable = 0;
+			rtype.is_non_consumable = 1;
+		}
+
+		if (flags & ATR_DFLAG_ATMOST) {
+			rtype.is_atmost = 1;
+			rtype.is_consumable = 0;
+			rtype.is_non_consumable = 1;
+		}
+
+		if (flags & ATR_DFLAG_STRANY) {
+			rtype.is_strany = 1;
+			rtype.is_consumable = 0;
+			rtype.is_non_consumable = 1;
+		}
+
+		if (flags & ATR_DFLAG_STRALL) {
+			rtype.is_strall = 1;
+			rtype.is_consumable = 0;
+			rtype.is_non_consumable = 1;
+		}
+
 		tmpres[cur_bs->name] = new resdef(cur_bs->name, flags, rtype);
 	}
 	pbs_statfree(bs);
@@ -560,4 +581,9 @@ resource_type::resource_type()
 	is_float = false;
 	is_size = false;
 	is_time = false;
+
+	is_atleast = false;
+	is_atmost = false;
+	is_strany = false;
+	is_strall = false;
 }

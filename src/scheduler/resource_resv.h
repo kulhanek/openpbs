@@ -265,6 +265,18 @@ place *dup_place(place *pl);
 int compare_res_to_str(schd_resource *res, char *str, enum resval_cmpflag);
 
 /*
+ *	compare_res_strany - compare a comma-separated requested string list
+ *			     against available string values using ANY/OR semantics
+ */
+int compare_res_strany(schd_resource *res, char *req_str);
+
+/*
+ *	compare_res_strall - compare a comma-separated requested string list
+ *			     against available string values using ALL/AND semantics
+ */
+int compare_res_strall(schd_resource *res, char *req_str);
+
+/*
  *	compare_non_consumable - perform the == operation on a non consumable
  *				resource and resource_req
  *	returns 1 for a match or 0 for not a match

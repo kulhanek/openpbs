@@ -362,7 +362,6 @@ AC_CONFIG_FILES([
 	src/cmds/scripts/pbs_habitat
 	src/cmds/scripts/pbs_poerun
 	src/cmds/scripts/pbs_postinstall
-	src/cmds/scripts/pbs-systemd-helper
 	src/cmds/scripts/pbs-comm.service
 	src/cmds/scripts/pbs-dataservice.service
 	src/cmds/scripts/pbs-datastore-init.service
@@ -379,6 +378,7 @@ AC_CONFIG_FILES([
 	src/lib/Libattr/Makefile
 	src/lib/Libdb/Makefile
 	src/lib/Libdb/pgsql/Makefile
+	src/lib/Libdb/pgsql/pbs_db_utility
 	src/lib/Libifl/Makefile
 	src/lib/Liblog/Makefile
 	src/lib/Libnet/Makefile

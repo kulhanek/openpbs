@@ -37,10 +37,14 @@
 # "OpenPBS®", "PBS Professional®", and "PBS Pro™" and Altair's logos is
 # subject to Altair's trademark licensing policies.
 
+. ${PBS_CONF_FILE:-/etc/pbs.conf}
+
+export PBS_EXEC
+export PBS_HOME
 
 upgrade_pbs_schema_from_v1_0_0() {
 
-	${PGSQL_DIR}/bin/psql -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
+	"${PGSQL_BIN}/psql" -v ON_ERROR_STOP=1 -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
 		alter table pbs.node alter column nd_index drop default;
 		alter table pbs.node drop constraint node_nd_index_key;
 		create index job_scr_idx on pbs.job_scr (ji_jobid);
@@ -68,7 +72,7 @@ upgrade_pbs_schema_from_v1_0_0() {
 
 upgrade_pbs_schema_from_v1_1_0() {
 
-	${PGSQL_DIR}/bin/psql -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
+	"${PGSQL_BIN}/psql" -v ON_ERROR_STOP=1 -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
 		ALTER TABLE pbs.info ALTER COLUMN pbs_schema_version TYPE text;
 		ALTER TABLE pbs.job ALTER COLUMN ji_jobid TYPE text;
 		ALTER TABLE pbs.job ALTER COLUMN ji_sv_name TYPE text;
@@ -126,7 +130,7 @@ upgrade_pbs_schema_from_v1_1_0() {
 
 upgrade_pbs_schema_from_v1_2_0() {
 
-	${PGSQL_DIR}/bin/psql -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
+	"${PGSQL_BIN}/psql" -v ON_ERROR_STOP=1 -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
 		DROP TABLE pbs.subjob_track;
 		INSERT INTO pbs.scheduler (sched_name, sched_sv_name, sched_savetm, sched_creattm) VALUES ('default', '1', localtimestamp, localtimestamp);
 		ALTER TABLE pbs.scheduler_attr DROP CONSTRAINT scheduler_attr_fk;
@@ -150,7 +154,7 @@ upgrade_pbs_schema_from_v1_2_0() {
 
 upgrade_pbs_schema_from_v1_3_0() {
 
-	${PGSQL_DIR}/bin/psql -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
+	"${PGSQL_BIN}/psql" -v ON_ERROR_STOP=1 -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
 		ALTER TABLE pbs.job ADD CONSTRAINT jobid_pk PRIMARY KEY (ji_jobid);
 	EOF
 	ret=$?
@@ -160,7 +164,7 @@ upgrade_pbs_schema_from_v1_3_0() {
 		return $ret
 	fi
 
-	${PGSQL_DIR}/bin/psql -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
+	"${PGSQL_BIN}/psql" -v ON_ERROR_STOP=1 -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
 
 		CREATE EXTENSION hstore SCHEMA public;
 
@@ -249,7 +253,7 @@ upgrade_pbs_schema_from_v1_3_0() {
 }
 
 upgrade_pbs_schema_from_v1_4_0() {
-	${PGSQL_DIR}/bin/psql -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
+	"${PGSQL_BIN}/psql" -v ON_ERROR_STOP=1 -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} <<-EOF > /dev/null
 		ALTER TABLE pbs.job DROP COLUMN ji_numattr;
 		ALTER TABLE pbs.job DROP COLUMN ji_ordering;
 		ALTER TABLE pbs.job DROP COLUMN ji_priority;
@@ -282,149 +286,95 @@ upgrade_pbs_schema_from_v1_4_0() {
 }
 
 # start of the upgrade schema script
-. ${PBS_EXEC}/libexec/pbs_db_env
-tmpdir=${PBS_TMPDIR:-${TMPDIR:-"/var/tmp"}}
+# start of the schema-only upgrade script
+#
+# Datastore lifecycle is intentionally NOT managed here.  The caller must:
+#   - prepare/export the PBS/PostgreSQL environment,
+#   - start the datastore,
+#   - arrange any temporary authentication changes required for migration,
+#   - call this script,
+#   - stop/restore the datastore as appropriate.
+#
+# Required environment:
+#   PBS_EXEC
+#   PBS_HOME
+#   PBS_DATA_SERVICE_PORT
+#   PBS_DATA_SERVICE_USER
+#   PGSQL_BIN
+#
 PBS_CURRENT_SCHEMA_VER='1.5.0'
 
-#
-# pbs_dataservice command now has more diagnostic output.
-# It can tell why it could not start, for example, that
-# dataservice might be running on another host.
-# So capture pbs_dataservice output and display in case of
-# errors during starting.
-#
-outfile="${tmpdir}/pbs_dataservice_output_$$"
+fail()
+{
+	echo "$*" >&2
+	exit 1
+}
 
-${PBS_EXEC}/sbin/pbs_dataservice status > /dev/null
-if [ $? -eq 0 ]; then
-	# running stop now
-	${PBS_EXEC}/sbin/pbs_dataservice stop > /dev/null
-	if [ $? -ne 0 ]; then
-		echo "Failed to stop PBS Dataservice"
-		exit 1
-	fi
-fi
+# Validate the environment supplied by pbs_db_utility (or another caller).
+[ -n "${PBS_EXEC:-}" ] || fail "PBS_EXEC is not set"
+[ -n "${PBS_HOME:-}" ] || fail "PBS_HOME is not set"
+[ -n "${PBS_DATA_SERVICE_PORT:-}" ] || fail "PBS_DATA_SERVICE_PORT is not set"
+[ -n "${PBS_DATA_SERVICE_USER:-}" ] || fail "PBS_DATA_SERVICE_USER is not set"
+[ -n "${PGSQL_BIN:-}" ] || fail "PGSQL_BIN is not set"
+[ -x "${PGSQL_BIN}/psql" ] || fail "PostgreSQL psql not found: ${PGSQL_BIN}/psql"
 
+# Read the current schema version from the datastore.  A connection/query
+# failure is fatal and must not be confused with an unsupported version.
+ver=$("${PGSQL_BIN}/psql" -v ON_ERROR_STOP=1 -A -t \
+	-p "${PBS_DATA_SERVICE_PORT}" \
+	-d pbs_datastore \
+	-U "${PBS_DATA_SERVICE_USER}" \
+	-c "select pbs_schema_version from pbs.info")
 ret=$?
 if [ $ret -ne 0 ]; then
+	echo "Cannot determine PBS datastore schema version" >&2
 	exit $ret
 fi
 
-# restart with new credentials
-# redirect the output, dont execute inside `` since
-# postgres processes would otherwise cause the script
-# to hang forever
-#
-${PBS_EXEC}/sbin/pbs_dataservice start > ${outfile}
-if [ $? -ne 0 ]; then
-	cat ${outfile}
-	rm -f ${outfile}
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		exit $ret
-	fi
-	return 1
-fi
-rm -f ${outfile}
+# Remove surrounding whitespace defensively.
+ver=$(printf '%s' "$ver" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-ver=`${PGSQL_DIR}/bin/psql -A -t -p ${PBS_DATA_SERVICE_PORT} -d pbs_datastore -U ${PBS_DATA_SERVICE_USER} -c "select pbs_schema_version from pbs.info"`
 if [ "$ver" = "${PBS_CURRENT_SCHEMA_VER}" ]; then
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		exit $ret
-	fi
 	exit 0
 fi
 
-if [ "$ver" = "1.0.0" ]; then
-	upgrade_pbs_schema_from_v1_0_0
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		ret=$?
-		if [ $ret -ne 0 ]; then
-		exit $ret
-		fi
+case "$ver" in
+	1.0.0|1.1.0|1.2.0|1.3.0|1.4.0)
+		;;
+	*)
+		echo "Cannot upgrade PBS datastore version $ver" >&2
 		exit 1
-	fi
+		;;
+esac
+
+if [ "$ver" = "1.0.0" ]; then
+	upgrade_pbs_schema_from_v1_0_0 || exit $?
 	ver="1.1.0"
 fi
 
-${PBS_EXEC}/sbin/pbs_dataservice status > /dev/null
-if [ $? -eq 1 ]; then
-	# not running, start now
-	${PBS_EXEC}/sbin/pbs_dataservice start > ${outfile}
-	if [ $? -ne 0 ]; then
-		cat ${outfile}
-		rm -f ${outfile}
-		ret=$?
-		if [ $ret -ne 0 ]; then
-			exit $ret
-		fi
-		exit 1
-	fi
-	rm -f ${outfile}
-fi
-
 if [ "$ver" = "1.1.0" ]; then
-	upgrade_pbs_schema_from_v1_1_0
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		exit $ret
-	fi
+	upgrade_pbs_schema_from_v1_1_0 || exit $?
 	ver="1.2.0"
 fi
 
 if [ "$ver" = "1.2.0" ]; then
-	upgrade_pbs_schema_from_v1_2_0
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		exit $ret
-	fi
+	upgrade_pbs_schema_from_v1_2_0 || exit $?
 	ver="1.3.0"
 fi
 
 if [ "$ver" = "1.3.0" ]; then
-	upgrade_pbs_schema_from_v1_3_0
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		exit $ret
-	fi
+	upgrade_pbs_schema_from_v1_3_0 || exit $?
 	ver="1.4.0"
 fi
 
 if [ "$ver" = "1.4.0" ]; then
-	upgrade_pbs_schema_from_v1_4_0
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		exit $ret
-	fi
+	upgrade_pbs_schema_from_v1_4_0 || exit $?
 	ver="1.5.0"
-else
-	echo "Cannot upgrade PBS datastore version $ver"
-	ret=$?
-	if [ $ret -ne 0 ]; then
-		exit $ret
-	fi
+fi
+
+if [ "$ver" != "${PBS_CURRENT_SCHEMA_VER}" ]; then
+	echo "PBS datastore schema upgrade ended at unexpected version $ver" >&2
 	exit 1
 fi
 
-${PBS_EXEC}/sbin/pbs_dataservice status > /dev/null
-if [ $? -eq 1 ]; then
-	# not running, start now
-	${PBS_EXEC}/sbin/pbs_dataservice start > ${outfile}
-	if [ $? -ne 0 ]; then
-		cat ${outfile}
-		rm -f ${outfile}
-		ret=$?
-		if [ $ret -ne 0 ]; then
-			exit $ret
-		fi
-		exit 1
-	fi
-fi
-rm -f ${outfile}
-
-${PBS_EXEC}/sbin/pbs_dataservice stop > /dev/null
-
-ret=$?
-exit $ret
+exit 0

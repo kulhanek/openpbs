@@ -4,6 +4,7 @@ Documentation=man:pbs(8)
 After=network-online.target local-fs.target remote-fs.target nss-lookup.target
 Wants=network-online.target
 Before=pbs-datastore-init.service pbs-comm.service pbs-mom.service pbs-server.service pbs-sched.service
+PartOf=pbs.target
 
 [Service]
 Type=oneshot

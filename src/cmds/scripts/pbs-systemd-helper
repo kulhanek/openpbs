@@ -148,7 +148,7 @@ prepare() {
 # pbs-dataservice unit is still stopped.  This extracts the DB portion of
 # pbs_habitat from the server bootstrap path.
 prepare_datastore() {
-    local rc version dbuser_fl
+    local rc version
 
     enabled_component server || return 0
 
@@ -161,60 +161,9 @@ prepare_datastore() {
         return 1
     }
 
-    # Reproduce the datastore environment setup done by pbs_habitat before
-    # invoking pbs_db_utility.  In particular, pbs_db_utility expects
-    # PBS_DATA_SERVICE_USER to be exported; the db_user file alone is not
-    # sufficient.
-    [[ -r "$PBS_EXEC/libexec/pbs_db_env" ]] || {
-        echo "$PBS_EXEC/libexec/pbs_db_env is missing or unreadable" >&2
-        return 1
-    }
-
-    # pbs_db_env comes from legacy shell code and may inspect variables which
-    # are initially unset.  Temporarily disable nounset while sourcing it.
-    set +u
-    # shellcheck disable=SC1090
-    . "$PBS_EXEC/libexec/pbs_db_env"
-    rc=$?
-    set -u
-    if (( rc != 0 )); then
-        echo "Could not set up PBS Data Service environment" >&2
-        return "$rc"
-    fi
-
-    dbuser_fl="$PBS_HOME/server_priv/db_user"
-    [[ -r "$dbuser_fl" ]] || {
-        echo "PBS Data Service User file is missing or unreadable: $dbuser_fl" >&2
-        return 1
-    }
-
-    # pbs_postinstall writes the configured database account to db_user.
-    # Do not depend on get_db_user()/chk_dataservice_user(): those helpers are
-    # defined by pbs_habitat in some OpenPBS versions and are not exported by
-    # pbs_db_env in this build.
-    PBS_DATA_SERVICE_USER=$(
-        awk 'NF { gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit }' "$dbuser_fl"
-    )
-
-    [[ -n "$PBS_DATA_SERVICE_USER" ]] || {
-        echo "PBS Data Service User is empty (check $dbuser_fl)" >&2
-        return 1
-    }
-
-    if [[ ! "$PBS_DATA_SERVICE_USER" =~ ^[A-Za-z_][A-Za-z0-9_.-]*[$]?$ ]]; then
-        echo "Invalid PBS Data Service User '$PBS_DATA_SERVICE_USER' in $dbuser_fl" >&2
-        return 1
-    fi
-
-    getent passwd "$PBS_DATA_SERVICE_USER" >/dev/null 2>&1 || {
-        echo "PBS Data Service User '$PBS_DATA_SERVICE_USER' does not exist" >&2
-        return 1
-    }
-
-    export PBS_DATA_SERVICE_USER
-
-    PBS_DATA_SERVICE_PORT=${PBS_DATA_SERVICE_PORT:-@database_port@}
-    export PBS_DATA_SERVICE_PORT
+    # pbs_db_utility is self-contained: it reads db_user, chooses the datastore
+    # port, and discovers PostgreSQL itself.  The helper intentionally does not
+    # source pbs_db_env or export PBS_DATA_SERVICE_* / PGSQL_* variables.
 
     # pbs_db_utility install_db returns 0 for a newly created datastore and 2
     # when a datastore already exists (the convention used by pbs_habitat).

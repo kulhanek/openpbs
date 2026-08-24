@@ -593,4 +593,6 @@ resource_type::resource_type()
 	is_equal = false;
 	is_strany = false;
 	is_strall = false;
+
+	is_dummy = false;
 }

@@ -1093,7 +1093,8 @@ find_check_resource(schd_resource *reslist, resource_req *resreq, unsigned int f
 
 		res->name = resreq->name;
 		res->def = resreq->def;
-		res->type = resreq->type; /* make the dummy resource the same type as resreq */
+		res->type = resreq->type;  /* make the dummy resource the same type as resreq */
+		res->type.is_dummy = true; /* set dummy flag */
 	}
 
 	if (res->indirect_res != NULL) {

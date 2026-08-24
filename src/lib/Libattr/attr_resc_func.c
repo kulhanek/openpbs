@@ -384,7 +384,7 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag,
 	}
 
 	/*
-	* Comparator resource flags:
+	* Resource comparison flags:
 	*
 	*   l - numeric comparison: available >= request
 	*   u - numeric comparison: available <= request
@@ -448,7 +448,7 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag,
 	}
 
 	/*
-	* Comparator resources are non-consumable.
+	* Comparison resources are non-consumable.
 	* Therefore accounting flags q/f/n are incompatible with l/u/e/o/a.
 	*/
 	if (cmp_flags != 0 &&
@@ -477,7 +477,7 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag,
 	}
 
 	/*
-	* Comparator resources are host-based resources.
+	* Comparison resources are host-based resources.
 	* Therefore flags h is required with l/u/e/o/a.
 	*/
 	if (cmp_flags != 0 &&
@@ -486,13 +486,13 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag,
 		if (autocorrect) {
 			*presc_flag |= ATR_DFLAG_CVTSLT;
 			snprintf(buf, buflen,
-					"Comparator flags 'l', 'u', 'e', 'o', and 'a' "
+					"Comparison flags 'l', 'u', 'e', 'o', and 'a' "
 					"require flag 'h' on resource \"%s\"; adding 'h'.",
 					rescname);
 			correction = 1;
 		} else {
 			snprintf(buf, buflen,
-					"Comparator flags 'l', 'u', 'e', 'o', and 'a' "
+					"Comparison flags 'l', 'u', 'e', 'o', and 'a' "
 					"require flag 'h' on resource \"%s\".",
 					rescname);
 			return -1;

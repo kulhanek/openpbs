@@ -2372,7 +2372,7 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 	if ( res->type.is_num ) {
 
 		/* we need defined resource to compare with */
-		if( res == zero_res() )
+		if(res->type.is_dummy)
 			return 0;
 
 		avail = res->avail;
@@ -2407,7 +2407,7 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 	}
 
 	/* strings, string_arrays */
-	
+
 	if (res->type.is_string && res->str_avail == NULL)
 		return 0;
 

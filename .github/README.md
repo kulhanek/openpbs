@@ -11,7 +11,7 @@ For build instructions, see [kulhanek/openpbs.build](https://github.com/kulhanek
 * The branch *ubuntu24.04-ltskernel* is based on CESNET/openpbs:release_20240227
 * Better systemd support (individual service units), implementation suboptimal
 * Removed a specific treatment of the *gpu_cap* resource from pbs_sched
-* New resource flag combinations implemented: **hl**, **hu**, **ho**, **ha** (based on the CESNET work on **l** and *gpu_cap*)
+* New resource flag combinations implemented: **hl**, **hu**, **he**, **ho**, **ha** (based on the CESNET work on **l** and *gpu_cap*)
 
 ## New Resources Flags
 
@@ -21,18 +21,24 @@ The new comparison flags are intended for host-level resources and therefore mus
 |---|---|---|
 | **hl** | `long`, `float`, `size` | The available value must be **greater than or equal to** the requested value (`available >= request`). |
 | **hu** | `long`, `float`, `size` | The available value must be **less than or equal to** the requested value (`available <= request`). |
-| **ho** | `string_array` | **ANY / OR** comparison. At least one value requested in a comma-separated list must be present in the available string array. |
-| **ha** | `string_array` | **ALL / AND** comparison. Every value requested in a comma-separated list must be present in the available string array. |
+| **he** | `long` | **Equality** comparison. The available value must be equal to the requested value (`available == request`). |
+| **ho** | `string`, `string_array` | **ANY / OR** comparison. At least one requested value in a string or a comma-separated list must be present in the available resource string array or string. |
+| **ha** | `string_array` | **ALL / AND** comparison. A string or every value requested in a comma-separated list must be present in the available resource string array. |
 
-The `l` and `u` comparison modes are non-consumable numeric comparisons: the resource is used for node selection only and its value is not consumed by a running job. Similarly, `o` and `a` provide non-consumable matching semantics for `string_array` resources.
+The `l`, `u`, and `e` comparison modes are non-consumable numeric comparisons: the resource is used for node selection only and its value is not consumed by a running job. The `e` mode is restricted to resources of type `long`. Similarly, `o` and `a` provide non-consumable matching semantics for string resources, with `o` supported for both `string` and `string_array`, while `a` is supported for `string_array`.
 
 Examples:
 
 ```text
-create resource cpu_freq type=long flag=hl
-create resource latency type=long flag=hu
+create resource gpu_mem type=long flag=hl
+create resource interconnect_latency type=long flag=hu
+create resource cpu_generation type=long flag=he
 create resource gpu_cap type=string_array flag=ho
-create resource cpu_isa type=string_array flag=ha
+create resource cpu_flag type=string_array flag=ha
 ```
 
-For `ho`, a request such as `gpu_cap=sm_80,sm_90` matches a vnode if either `sm_80` or `sm_90` is available. For `ha`, the same request matches only if both values are available on the vnode.
+* For `hl`, `gpu_mem=16gb` requests a GPU with minimum GPU memory of 16 GB. 
+* For `hu`, `interconnect_latency=5` requests a vnode with maximum latency of 5 microseconds.
+* For `he`, `cpu_generation=5` matches only a vnode whose available `cpu_generation` value is exactly `5`.  
+* For `ho`, `gpu_cap=sm_80,sm_90` matches a vnode if either `sm_80` or `sm_90` is available.
+* For `ha`, `cpu_flag=intel_ppin,cqm,dca` matches only if all requested CPU flags are available on the vnode.

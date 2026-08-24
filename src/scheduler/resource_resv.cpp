@@ -2347,11 +2347,15 @@ compare_res_strall(schd_resource *res, char *req_str)
 int
 compare_non_consumable(schd_resource *res, resource_req *req)
 {
+	sch_resource_t avail;			/* amount of available resource */
+
 	if (res == NULL && req == NULL)
 		return 0;
 
 	if (req == NULL)
 		return 0;
+
+	/* exclude consumable resources */
 
 	if (!req->type.is_non_consumable)
 		return 0;
@@ -2359,21 +2363,35 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 	if (res != NULL) {
 		if (!res->type.is_non_consumable)
 			return 0;
-
-		if (res->type.is_string && res->str_avail == NULL)
-			return 0;
 	}
 
-	if (req->type.is_atleast || req->type.is_atmost) {
-		if (res == NULL)
-			return 0;
+	/* numerical values */
 
-		if (req->type.is_atleast)
-			return res->avail >= req->amount;
+	if (res != NULL && res->type.is_num ) {
 
-		if (req->type.is_atmost)
-			return res->avail <= req->amount;
+		if (res->type.is_atleast || res->type.is_atmost || res->type.is_equal) {
+			avail = res->avail;
+
+			if (res->type.is_atleast ){
+				if (avail == SCHD_INFINITY_RES)
+					avail = UNSPECIFIED_RES;
+
+				if( avail >= req->amount ) ) {
+					return 1;
+				}
+			}
+			if (res->type.is_atleast && (avail <= req->amount) ) {
+				return 1;
+			}
+			if (res->type.is_equal && (avail == req->amount) ) {
+				return 1;
+			}
+		}
+
+		return 0;
 	}
+
+	/* boolean */
 
 	/* successful boolean match: (req = request res = resource on object)
 	 * req: True  res: True
@@ -2392,7 +2410,14 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 			return res->avail == req->amount;
 	}
 
-	if (req->type.is_string && res != NULL) {
+	/* strings, string_arrays */
+
+	if (res != NULL) {
+		if (res->type.is_string && res->str_avail == NULL)
+			return 0;
+	}
+
+	if ( res != NULL && res->type.is_string ) {
 		if (res->type.is_strany)
 			return compare_res_strany(res, req->res_str);
 		if (res->type.is_strall)

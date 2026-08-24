@@ -103,40 +103,51 @@ extern "C" {
 #define ATR_TYPE_JINFOP 13 /* struct jobinfo*  */
 #define ATR_TYPE_FLOAT 14  /* Float  */
 #define ATR_TYPE_ENTITY 15 /* FGC Entity Limit */
-/* WARNING: adding anther WILL overflow the type field in the attribut_def */
+/* WARNING: adding another WILL overflow the type field in the attribut_def */
 
 /* Defines for  Flag field in attribute_def */
 
-#define ATR_DFLAG_USRD 0x01    /* User client can read (status) attribute */
-#define ATR_DFLAG_USWR 0x02    /* User client can write (set)   attribute */
-#define ATR_DFLAG_OPRD 0x04    /* Operator client can read   attribute */
-#define ATR_DFLAG_OPWR 0x08    /* Operator client can write  attribute */
-#define ATR_DFLAG_MGRD 0x10    /* Manager client can read  attribute */
-#define ATR_DFLAG_MGWR 0x20    /* Manager client can write attribute */
-#define ATR_DFLAG_OTHRD 0x40   /* Reserved */
-#define ATR_DFLAG_Creat 0x80   /* Can be set on create only */
-#define ATR_DFLAG_SvRD 0x100   /* job attribute is sent to server on move */
-#define ATR_DFLAG_SvWR 0x200   /* job attribute is settable by server/Sch */
-#define ATR_DFLAG_MOM 0x400    /* attr/resc sent to MOM "iff" set	   */
-#define ATR_DFLAG_RDACC 0x515  /* Read access mask  */
-#define ATR_DFLAG_WRACC 0x6AA  /* Write access mask */
-#define ATR_DFLAG_ACCESS 0x7ff /* Mask access flags */
+/* 
+see attribute.h
+#define ATRDFLAG 24
+unsigned int at_flags : ATRDFLAG; 
+
+ WARNING:                0x00FFFFFF <- this is accessible range (24 bits)
+*/
+
+#define ATR_DFLAG_USRD         0x01  /* User client can read (status) attribute */
+#define ATR_DFLAG_USWR         0x02  /* User client can write (set)   attribute */
+#define ATR_DFLAG_OPRD         0x04  /* Operator client can read   attribute */
+#define ATR_DFLAG_OPWR         0x08  /* Operator client can write  attribute */
+#define ATR_DFLAG_MGRD         0x10  /* Manager client can read  attribute */
+#define ATR_DFLAG_MGWR         0x20  /* Manager client can write attribute */
+#define ATR_DFLAG_OTHRD        0x40  /* Reserved */
+#define ATR_DFLAG_Creat        0x80  /* Can be set on create only */
+#define ATR_DFLAG_SvRD        0x100  /* job attribute is sent to server on move */
+#define ATR_DFLAG_SvWR        0x200  /* job attribute is settable by server/Sch */
+#define ATR_DFLAG_MOM         0x400  /* attr/resc sent to MOM "iff" set	   */
+#define ATR_DFLAG_RDACC       0x515  /* Read access mask  */
+#define ATR_DFLAG_WRACC       0x6AA  /* Write access mask */
+#define ATR_DFLAG_ACCESS      0x7ff  /* Mask access flags */
 
 #define ATR_DFLAG_ALTRUN     0x0800	 /* (job) attr/resc is alterable in Run state  */
 #define ATR_DFLAG_NOSAVM     0x1000	 /* object not saved on attribute modify       */
 #define ATR_DFLAG_SELEQ      0x2000	 /* attribute is only selectable eq/ne	      */
 #define ATR_DFLAG_RASSN      0x4000	 /* resc in server/queue resources_assigned    */
 #define ATR_DFLAG_ANASSN     0x8000	 /* resource in all node resources_assigned  */
-#define ATR_DFLAG_FNASSN    0x10000   /* resource in 1st node resources_assigned  */
-#define ATR_DFLAG_CVTSLT    0x20000   /* used in or converted to select directive */
-#define ATR_DFLAG_SCGALT    0x40000   /* if altered during sched cycle dont run job*/
-#define ATR_DFLAG_HIDDEN    0x80000   /* if set, keep attribute hidden to client */
-#define ATR_DFLAG_ATLEAST  0x100000   /* compare non-consumable resources, available >= request */
-#define ATR_DFLAG_ATMOST   0x200000   /* compare non-consumable resources, available <= request */
-#define ATR_DFLAG_EQUAL    0x400000   /* RESERVED: compare non-consumable resources, available == request */
-#define ATR_DFLAG_STRANY  0x1000000   /* compare non-consumable resources, string list, any match */
-#define ATR_DFLAG_STRALL  0x2000000   /* compare non-consumable resources, string list, all matches required */
-#define ATR_DFLAG_STREQ   0x4000000   /* RESERVED: compare non-consumable resources, available == request */
+#define ATR_DFLAG_FNASSN    0x10000  /* resource in 1st node resources_assigned  */
+#define ATR_DFLAG_CVTSLT    0x20000  /* used in or converted to select directive */
+#define ATR_DFLAG_SCGALT    0x40000  /* if altered during sched cycle dont run job*/
+#define ATR_DFLAG_HIDDEN    0x80000  /* if set, keep attribute hidden to client */
+
+#define ATR_DFLAG_CMP_MASK 0x700000  /* mask for comparison flags */ 
+#define ATR_DFLAG_ATLEAST  0x100000  /* compare non-consumable resources, available >= request (numerical: long, float, size) */
+#define ATR_DFLAG_ATMOST   0x200000  /* compare non-consumable resources, available <= request (numerical: long, float, size)*/
+#define ATR_DFLAG_EQUAL    0x300000  /* compare non-consumable resources, available == request (numerical: long)*/
+#define ATR_DFLAG_STRANY   0x400000  /* compare non-consumable resources, any match (string list, string) */
+#define ATR_DFLAG_STRALL   0x500000  /* compare non-consumable resources, all matches required (string list) */
+
+/* NOTE: one bit is still available in at_flags */
 
 #define SHUT_MASK 0xf
 #define SHUT_WHO_MASK 0x1f0

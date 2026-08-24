@@ -125,25 +125,31 @@ query_resources(int pbs_sd)
 
 		rtype = conv_rsc_type(type);
 
-		if (flags & ATR_DFLAG_ATLEAST) {
+		if ( (flags & ATR_DFLAG_CMP_MASK) == ATR_DFLAG_ATLEAST ) {
 			rtype.is_atleast = 1;
 			rtype.is_consumable = 0;
 			rtype.is_non_consumable = 1;
 		}
 
-		if (flags & ATR_DFLAG_ATMOST) {
+		if ( (flags & ATR_DFLAG_CMP_MASK) ==  & ATR_DFLAG_ATMOST ) {
 			rtype.is_atmost = 1;
 			rtype.is_consumable = 0;
 			rtype.is_non_consumable = 1;
 		}
 
-		if (flags & ATR_DFLAG_STRANY) {
+			if ( (flags & ATR_DFLAG_CMP_MASK) ==  & ATR_DFLAG_EQUAL ) {
+			rtype.is_equal= 1;
+			rtype.is_consumable = 0;
+			rtype.is_non_consumable = 1;
+		}
+
+		if ( (flags & ATR_DFLAG_CMP_MASK) ==  & ATR_DFLAG_STRANY ) {
 			rtype.is_strany = 1;
 			rtype.is_consumable = 0;
 			rtype.is_non_consumable = 1;
 		}
 
-		if (flags & ATR_DFLAG_STRALL) {
+		if ( (flags & ATR_DFLAG_CMP_MASK) ==  & ATR_DFLAG_STRALL ) {
 			rtype.is_strall = 1;
 			rtype.is_consumable = 0;
 			rtype.is_non_consumable = 1;
@@ -584,6 +590,7 @@ resource_type::resource_type()
 
 	is_atleast = false;
 	is_atmost = false;
+	is_equal = false;
 	is_strany = false;
 	is_strall = false;
 }

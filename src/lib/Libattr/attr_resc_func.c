@@ -549,7 +549,7 @@ parse_resc_flags(char *val, int *flag_ir_p, int *resc_flag_p)
 			flag_ir++;
 
 		/* comparison flags - mutually exclusive */
-		else if (*val == 'l' || *val == 'u' || *val == 'e' ||
+		} else if (*val == 'l' || *val == 'u' || *val == 'e' ||
 			*val == 'o' || *val == 'a') {
 
 			if ((resc_flag & ATR_DFLAG_CMP_MASK) != 0)

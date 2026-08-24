@@ -2376,7 +2376,7 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 				if (avail == SCHD_INFINITY_RES)
 					avail = UNSPECIFIED_RES;
 
-				if( avail >= req->amount ) ) {
+				if( avail >= req->amount ) {
 					return 1;
 				}
 			}

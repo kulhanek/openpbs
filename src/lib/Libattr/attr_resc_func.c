@@ -302,8 +302,7 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag,
 {
 	char fchar;
 	int correction = 0;
-	int cmp_num_flags;
-	int cmp_str_flags;
+	int cmp_flags = 0;
 
 	if (*pflag_ir == 2) { /* both flag i and r are set */
 		if (autocorrect) {
@@ -520,6 +519,7 @@ parse_resc_flags(char *val, int *flag_ir_p, int *resc_flag_p)
 {
 	int resc_flag = READ_WRITE;
 	int flag_ir = 0;
+	int cmp_flag = 0;
 
 	if ((val == NULL) || (flag_ir_p == NULL) || (resc_flag_p == NULL))
 		return -1;
@@ -576,7 +576,7 @@ parse_resc_flags(char *val, int *flag_ir_p, int *resc_flag_p)
 			resc_flag = (resc_flag & ~ATR_DFLAG_CMP_MASK) | cmp_flag;
 		} else
 			return -1;
-			
+
 		val++;
 	}
 	*flag_ir_p = flag_ir;

@@ -476,6 +476,29 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag,
 		}
 	}
 
+	/*
+	* Comparator resources are host-based resources.
+	* Therefore flags h is required with l/u/e/o/a.
+	*/
+	if (cmp_flags != 0 &&
+		((*presc_flag & ATR_DFLAG_CVTSLT) == 0)) {
+
+		if (autocorrect) {
+			*presc_flag |= ATR_DFLAG_CVTSLT;
+			snprintf(buf, buflen,
+					"Comparator flags 'l', 'u', 'e', 'o', and 'a' "
+					"require flag 'h' on resource \"%s\"; adding 'h'.",
+					rescname);
+			correction = 1;
+		} else {
+			snprintf(buf, buflen,
+					"Comparator flags 'l', 'u', 'e', 'o', and 'a' "
+					"require flag 'h' on resource \"%s\".",
+					rescname);
+			return -1;
+		}
+	}	
+
 	if (autocorrect && correction)
 		return -2;
 

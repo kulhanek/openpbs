@@ -2369,24 +2369,19 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 
 	if (res != NULL && res->type.is_num ) {
 
-		if (res->type.is_atleast || res->type.is_atmost || res->type.is_equal) {
-			avail = res->avail;
+		avail = res->avail;
 
-			if (res->type.is_atleast ){
-				if (avail == SCHD_INFINITY_RES)
-					avail = UNSPECIFIED_RES;
-
-				if( avail >= req->amount ) {
-					return 1;
-				}
-			}
-			if (res->type.is_atleast && (avail <= req->amount) ) {
-				return 1;
-			}
-			if (res->type.is_equal && (avail == req->amount) ) {
-				return 1;
-			}
+		if (res->type.is_atleast) {
+			if (avail == SCHD_INFINITY_RES)
+				avail = UNSPECIFIED_RES;
+			return avail >= req->amount;
 		}
+
+		if (res->type.is_atmost)
+			return avail <= req->amount;
+
+		if (res->type.is_equal)
+			return avail == req->amount;
 
 		return 0;
 	}

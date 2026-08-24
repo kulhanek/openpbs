@@ -2349,38 +2349,44 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 {
 	sch_resource_t avail;			/* amount of available resource */
 
-	if (res == NULL && req == NULL)
-		return 0;
-
-	if (req == NULL)
-		return 0;
+	/* from calling trace, both res and req cannot be NULL  
+	*  if res is not defined it is substituted by dummy resources:
+	*	schd_resource *fres = false_res();
+	*   schd_resource *zres = zero_res();
+	*   schd_resource *ustr = unset_str_res();
+	*  now, dummy resources have the same type as req
+	*/
+	if (res == NULL || req == NULL)
+		return 0;	/* sanity check */
 
 	/* exclude consumable resources */
 
 	if (!req->type.is_non_consumable)
 		return 0;
 
-	if (res != NULL) {
-		if (!res->type.is_non_consumable)
-			return 0;
-	}
+	if (!res->type.is_non_consumable)
+		return 0;
 
 	/* numerical values */
 
-	if (res != NULL && res->type.is_num ) {
+	if ( res->type.is_num ) {
+
+		/* we need defined resource to compare with */
+		if( res == zero_res() )
+			return 0;
 
 		avail = res->avail;
 
-		if (res->type.is_atleast) {
+		if (req->type.is_atleast) {
 			if (avail == SCHD_INFINITY_RES)
 				avail = UNSPECIFIED_RES;
 			return avail >= req->amount;
 		}
 
-		if (res->type.is_atmost)
+		if (req->type.is_atmost)
 			return avail <= req->amount;
 
-		if (res->type.is_equal)
+		if (req->type.is_equal)
 			return avail == req->amount;
 
 		return 0;
@@ -2389,30 +2395,23 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 	/* boolean */
 
 	/* successful boolean match: (req = request res = resource on object)
+	 * req:   *   res: TRUE_FALSE
 	 * req: True  res: True
 	 * req: False res: False
-	 * req: False res: NULL
-	 * req:   *   res: TRUE_FALSE
 	 */
 	if (req->type.is_boolean) {
-		if (!req->amount && res == NULL)
-			return 1;
-		else if (req->amount && res == NULL)
-			return 0;
-		else if (res->avail == TRUE_FALSE)
+		if (res->avail == TRUE_FALSE)
 			return 1;
 		else
 			return res->avail == req->amount;
 	}
 
 	/* strings, string_arrays */
+	
+	if (res->type.is_string && res->str_avail == NULL)
+		return 0;
 
-	if (res != NULL) {
-		if (res->type.is_string && res->str_avail == NULL)
-			return 0;
-	}
-
-	if ( res != NULL && res->type.is_string ) {
+	if (res->type.is_string) {
 		if (res->type.is_strany)
 			return compare_res_strany(res, req->res_str);
 		if (res->type.is_strall)

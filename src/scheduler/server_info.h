@@ -361,6 +361,12 @@ int add_resource_atleast(schd_resource *r1, schd_resource *r2);
 int add_resource_atmost(schd_resource *r1, schd_resource *r2);
 
 /*
+ *      accumulate two equal resources together (r1 += r2)
+ *      by keeping the value
+ */
+int add_resource_equal(schd_resource *r1, schd_resource *r2);
+
+/*
  *	find_indirect_resource - follow the indirect resource pointers to
  *				 find the real resource at the end
  *	returns the indirect resource or NULL on error

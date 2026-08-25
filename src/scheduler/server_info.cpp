@@ -1116,7 +1116,7 @@ free_resource(schd_resource *resp)
 	if (resp->reserved != NULL)
 		free_resource_reserved_list(resp->reserved);
 
-	free(resp);
+	delete resp;
 }
 
 // Init function
@@ -1206,26 +1206,28 @@ server_info::~server_info()
 schd_resource *
 new_resource()
 {
-	schd_resource *resp; /* the new resource */
+    schd_resource *resp = new (std::nothrow) schd_resource{};
 
-	if ((resp = static_cast<schd_resource *>(calloc(1, sizeof(schd_resource)))) == NULL) {
-		log_err(errno, __func__, MEM_ERR_MSG);
-		return NULL;
-	}
+    if (resp == NULL) {
+        log_err(errno, __func__, MEM_ERR_MSG);
+        return NULL;
+    }
 
-	/* member type zero'd by calloc() */
+	/* now we must initialize member items */
 
 	resp->name = NULL;
-	resp->next = NULL;
-	resp->def = NULL;
+	// type by its own constructor
 	resp->orig_str_avail = NULL;
 	resp->indirect_vnode_name = NULL;
 	resp->indirect_res = NULL;
-	resp->str_avail = NULL;
-	resp->str_assigned = NULL;
-	resp->assigned = RES_DEFAULT_ASSN;
 	resp->avail = RES_DEFAULT_AVAIL;
+	// avail_unique byt its own constructor
+	resp->str_avail = NULL;
+	resp->assigned = RES_DEFAULT_ASSN;
+	resp->str_assigned = NULL;
+	resp->def = NULL;
 	resp->reserved = NULL;
+	resp->next = NULL;
 
 	return resp;
 }
@@ -1685,9 +1687,9 @@ add_resource_equal(schd_resource *r1, schd_resource *r2)
 	if (r1->avail == r2->avail)
 		return 1;
 
-	r1->avail = UNSPECIFIED_RES;
 	r1->avail_unique.insert(r1->avail);
 	r1->avail_unique.insert(r2->avail);
+	r1->avail = UNSPECIFIED_RES;
 
     return 1;
 }
@@ -2591,8 +2593,9 @@ dup_resource(schd_resource *res)
 	nres->avail = res->avail;
 	nres->assigned = res->assigned;
 
-	memcpy(&(nres->type), &(res->type), sizeof(struct resource_type));
-
+	nres->type = res->type;
+	nres->avail_unique = res->avail_unique;
+	
 	return nres;
 }
 

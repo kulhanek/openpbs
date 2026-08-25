@@ -2383,7 +2383,7 @@ compare_non_consumable(schd_resource *res, resource_req *req)
 
 		if (res->type.is_equal){
 			if (res->avail == UNSPECIFIED_RES)
-				return res->avail_unique.contains(req->amount);
+				return res->avail_unique.count(req->amount) > 0;
 			else
 				return res->avail == req->amount;
 		}

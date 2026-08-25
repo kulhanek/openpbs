@@ -2342,53 +2342,52 @@ compare_res_strall(schd_resource *res, char *req_str)
  * @return	int
  * @retval	1	: for a match
  * @retval	0	: for not a match
- *
+ * 
+ * @note
+ *  from calling trace, both res and req cannot be NULL
+ *  see match_resource() for res, and check_avail_resources() for req 
+ *  if res is not defined it is substituted by dummy resources:
+ *      schd_resource *fres = false_res();
+ *      schd_resource *zres = zero_res();
+ *      schd_resource *ustr = unset_str_res();
+ *  dummy resources are now set to have the same type as req
  */
 int
 compare_non_consumable(schd_resource *res, resource_req *req)
 {
-	sch_resource_t avail;			/* amount of available resource */
-
-	/* from calling trace, both res and req cannot be NULL  
-	*  if res is not defined it is substituted by dummy resources:
-	*	schd_resource *fres = false_res();
-	*   schd_resource *zres = zero_res();
-	*   schd_resource *ustr = unset_str_res();
-	*  now, dummy resources have the same type as req
-	*/
 	if (res == NULL || req == NULL)
 		return 0;	/* sanity check */
 
 	/* exclude consumable resources */
 
-	if (!req->type.is_non_consumable)
+	if (!res->type.is_non_consumable)
 		return 0;
 
-	if (!res->type.is_non_consumable)
+	if (!req->type.is_non_consumable)
 		return 0;
 
 	/* numerical values */
 
-	if ( res->type.is_num ) {
+	if (res->type.is_num) {
 
-		/* we need defined resource to compare with */
-		if(res->type.is_dummy)
+		/* we need the defined resource to compare with */
+		if (res->type.is_dummy)
 			return 0;
 
-		avail = res->avail;
+		/* comparisons */
+		if (res->type.is_atleast)
+			return res->avail >= req->amount;
 
-		if (req->type.is_atleast) {
-			if (avail == SCHD_INFINITY_RES)
-				avail = UNSPECIFIED_RES;
-			return avail >= req->amount;
+		if (res->type.is_atmost)
+			return res->avail <= req->amount;
+
+		if (res->type.is_equal){
+			if (res->avail == UNSPECIFIED_RES)
+				return res->avail_unique.contains(req->amount);
+			else
+				return res->avail == req->amount;
 		}
-
-		if (req->type.is_atmost)
-			return avail <= req->amount;
-
-		if (req->type.is_equal)
-			return avail == req->amount;
-
+			
 		return 0;
 	}
 

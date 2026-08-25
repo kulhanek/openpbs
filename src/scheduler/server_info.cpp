@@ -1594,30 +1594,27 @@ add_resource_bool(schd_resource *r1, schd_resource *r2)
  *   Host aggregation for >= semantics: retain the maximum value.
  *
  * @param[in] 	r1	-	lval : left side to add to
- * @param[in]	r2 	-	rval : right side - if NULL, treat r2->avail as UNSPECIFIED_RES
+ * @param[in]	r2 	-	rval : right side to add to
  * 
  * @return int
  * @retval	1	: Ok
  * @retval	0	: Error
+ * 
+ * @note
+ * called only from add_resource_list(), r1 and r2 cannot be NULL
  */
 
 int
 add_resource_atleast(schd_resource *r1, schd_resource *r2)
 {
-	if (r1 == NULL)
-		return 0;
+    if (r1 == NULL || r2 == NULL)
+        return 0; /* sanity check - this should not happen */
 
-	if (!r1->type.is_atleast)
-		return 0;
+	if (!r1->type.is_atleast || !r2->type.is_atleast)
+		return 0; /* wrong types */
 
-	if (r2 == NULL)
-		return 1;  /* equivalent to MAX(r1->avail, UNSPECIFIED_RES) */
-
-	if (!r2->type.is_atleast)
-		return 0;
-
-	if (r2->avail > r1->avail)
-		r1->avail = r2->avail;
+	if (r2->avail > r1->avail) /* keep MAX(r1,r2) */
+		r1->avail = r2->avail; 
 
 	return 1;
 }
@@ -1627,29 +1624,26 @@ add_resource_atleast(schd_resource *r1, schd_resource *r2)
  *   Host aggregation for <= semantics: retain the minimum value.
  * 
  * @param[in] 	r1	-	lval : left side to add to
- * @param[in]	r2 	-	rval : right side - if NULL, treat r2->avail as SCHD_INFINITY_RES
- *
+ * @param[in]	r2 	-	rval : right side to add to
+ * 
  * @return int
  * @retval	1	: Ok
  * @retval	0	: Error
+ * 
+ * @note
+ * called only from add_resource_list(), r1 and r2 cannot be NULL
  */
 
 int
 add_resource_atmost(schd_resource *r1, schd_resource *r2)
 {
-	if (r1 == NULL)
-		return 0;
+    if (r1 == NULL || r2 == NULL)
+        return 0; /* sanity check - this should not happen */
 
-	if (!r1->type.is_atmost)
-		return 0;
+	if (!r1->type.is_atmost || !r2->type.is_atmost)
+		return 0; /* wrong types */
 
-	if (r2 == NULL)
-		return 1;  /* equivalent to MIN(r1->avail, SCHD_INFINITY_RES) */
-
-	if (!r2->type.is_atmost)
-		return 0;
-
-	if (r2->avail < r1->avail)
+	if (r2->avail < r1->avail) /* keep MIN(r1,r2) */
 		r1->avail = r2->avail;
 
 	return 1;
@@ -1657,39 +1651,43 @@ add_resource_atmost(schd_resource *r1, schd_resource *r2)
 
 /**
  * @brief
- *   Host aggregation for == semantics: only if the same.
+ *   Host aggregation for == semantics
  *
  * @param[in] 	r1	-	lval : left side to add to
- * @param[in]	r2 	-	rval : right side - if NULL, r1->avail becomes UNSPECIFIED_RES
+ * @param[in]	r2 	-	rval : right side to add to
  * 
  * @return int
  * @retval	1	: Ok
  * @retval	0	: Error
+ * 
+ * @note
+ * called only from add_resource_list(), r1 and r2 cannot be NULL
  */
 
 int
 add_resource_equal(schd_resource *r1, schd_resource *r2)
 {
-    if (r1 == NULL)
-        return 0;
+    if (r1 == NULL || r2 == NULL)
+        return 0; /* sanity check - this should not happen */
 
-	if (!r1->type.is_equal)
-		return 0;
-
-	if ((r2 != NULL) && !r2->type.is_equal)
-		return 0;
+	if (!r1->type.is_equal || !r2->type.is_equal)
+		return 0; /* wrong types */
 
     /*
-     * Equality survives aggregation only when all contributing
-     * resources have exactly the same value.
-     *
      * UNSPECIFIED_RES represents a mixed/inconsistent aggregate.
+	 * available values are then assembled in 'avail_unique' set
      */
-    if (r1->avail == UNSPECIFIED_RES)
-        return 1;
 
-    if ( (r2 == NULL) || (r1->avail != r2->avail) )
-        r1->avail = UNSPECIFIED_RES;
+    if (r1->avail == UNSPECIFIED_RES) {
+		r1->avail_unique.insert(r2->avail);
+        return 1;
+	}
+	if (r1->avail == r2->avail)
+		return 1;
+
+	r1->avail = UNSPECIFIED_RES;
+	r1->avail_unique.insert(r1->avail);
+	r1->avail_unique.insert(r2->avail);
 
     return 1;
 }

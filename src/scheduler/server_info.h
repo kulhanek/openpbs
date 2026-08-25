@@ -362,7 +362,7 @@ int add_resource_atmost(schd_resource *r1, schd_resource *r2);
 
 /*
  *      accumulate two equal resources together (r1 += r2)
- *      by keeping the value
+ *      by building a unique set of values
  */
 int add_resource_equal(schd_resource *r1, schd_resource *r2);
 

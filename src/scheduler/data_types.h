@@ -880,6 +880,7 @@ struct schd_resource
 	schd_resource *indirect_res;	/* ptr to indirect resource */
 
 	sch_resource_t avail;		/* availble amount of the resource */
+	std::set<sch_resource_t> avail_unique; /* list of unique available values */
 	char **str_avail;		/* the string form of avail */
 	sch_resource_t assigned;	/* amount of the resource assigned */
 	char *str_assigned;		/* the string form of assigned */

@@ -1924,6 +1924,7 @@ false_res()
 
 	res->def = NULL;
 	res->name = NULL;
+	res->type.is_dummy = true;
 
 	return res;
 }
@@ -1964,6 +1965,7 @@ unset_str_res()
 
 	res->name = NULL;
 	res->def = NULL;
+	res->type.is_dummy = true;
 
 	return res;
 }
@@ -1995,6 +1997,7 @@ zero_res()
 
 	res->name = NULL;
 	res->def = NULL;
+	res->type.is_dummy = true;
 
 	return res;
 }

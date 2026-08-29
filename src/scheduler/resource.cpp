@@ -560,4 +560,7 @@ resource_type::resource_type()
 	is_float = false;
 	is_size = false;
 	is_time = false;
+
+	/* dummy resource */
+	is_dummy = false;
 }

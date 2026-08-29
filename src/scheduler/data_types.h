@@ -850,6 +850,10 @@ class resource_type
 	bool is_time:1;
 
 	bool is_atleast:1; /* comparable resource - at least this value */
+
+	/* dummy resource */
+	bool is_dummy:1;
+	
 	resource_type();
 };
 

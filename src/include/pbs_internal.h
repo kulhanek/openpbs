@@ -131,7 +131,17 @@ extern "C" {
 #define ATR_DFLAG_CVTSLT 0x20000 /* used in or converted to select directive */
 #define ATR_DFLAG_SCGALT 0x40000 /* if altered during sched cycle dont run job*/
 #define ATR_DFLAG_HIDDEN 0x80000 /* if set, keep attribute hidden to client */
-#define ATR_DFLAG_ATLEAST 0x100000 /*  */
+
+#define ATR_DFLAG_ATLEAST  0x100000  /* compare non-consumable resources, available >= request (numerical: long, float, size) */
+#define ATR_DFLAG_ATMOST   0x200000  /* compare non-consumable resources, available <= request (numerical: long, float, size)*/
+#define ATR_DFLAG_STRANY   0x400000  /* compare non-consumable resources, any match (string list, string) */
+#define ATR_DFLAG_STRALL   0x800000  /* compare non-consumable resources, all matches required (string list) */
+
+/* WARNING:                0xFFFFFF <- this is accessible range (24 bits), no bits left
+see attribute.h
+#define ATRDFLAG 24
+unsigned int at_flags : ATRDFLAG; 
+*/
 
 #define SHUT_MASK 0xf
 #define SHUT_WHO_MASK 0x1f0

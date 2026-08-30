@@ -561,6 +561,12 @@ resource_type::resource_type()
 	is_size = false;
 	is_time = false;
 
+	/* comparison resource */
+	is_atleast = false;
+	is_atmost = false;
+	is_strany = false;
+	is_strall = false;
+
 	/* dummy resource */
 	is_dummy = false;
 }

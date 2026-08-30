@@ -1,0 +1,11 @@
+[Unit]
+Description=OpenPBS job cgroup owner
+Before=pbs-mom.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+RemainAfterExit=yes
+Delegate=yes
+DelegateSubgroup=manager
+

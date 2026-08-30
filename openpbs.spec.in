@@ -521,6 +521,7 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %attr(644, root, root) %{_unitdir}/pbs-dataservice.service
 %attr(644, root, root) %{_unitdir}/pbs-datastore-init.service
 %attr(644, root, root) %{_unitdir}/pbs-mom.service
+%attr(644, root, root) %{_unitdir}/pbs-jobs.service
 %attr(644, root, root) %{_unitdir}/pbs-prepare.service
 %attr(644, root, root) %{_unitdir}/pbs-sched.service
 %attr(644, root, root) %{_unitdir}/pbs-server-init.service
@@ -550,6 +551,7 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %attr(644, root, root) %{_unitdir}/pbs-dataservice.service
 %attr(644, root, root) %{_unitdir}/pbs-datastore-init.service
 %attr(644, root, root) %{_unitdir}/pbs-mom.service
+%attr(644, root, root) %{_unitdir}/pbs-jobs.service
 %attr(644, root, root) %{_unitdir}/pbs-prepare.service
 %attr(644, root, root) %{_unitdir}/pbs-sched.service
 %attr(644, root, root) %{_unitdir}/pbs-server-init.service

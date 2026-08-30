@@ -226,8 +226,15 @@ find_resc_flag_map(int perms)
 		flags[i++] = 'r';
 	if (perms & ATR_DFLAG_MOM)
 		flags[i++] = 'm';
+	/* comparison flags - mutually exclusive */
 	if (perms & ATR_DFLAG_ATLEAST)
 		flags[i++] = 'l';
+	else if (perms & ATR_DFLAG_ATMOST)
+		flags[i++] = 'u';
+	else if (perms & ATR_DFLAG_STRANY)
+		flags[i++] = 'o';
+	else if (perms & ATR_DFLAG_STRALL)
+		flags[i++] = 'a';
 
 	flags[i] = '\0';
 	return flags;

@@ -1392,7 +1392,7 @@ compare_resource_req(resource_req *req1, resource_req *req2)
 	else if (req1 == NULL || req2 == NULL)
 		return 0;
 
-	if (req1->type.is_consumable || req1->type.is_boolean || req1->type.is_atleast)
+	if (req1->type.is_num || req1->type.is_boolean)
 		return (req1->amount == req2->amount);
 
 	if (req1->type.is_string)
@@ -2254,98 +2254,81 @@ compare_res_to_str(schd_resource *res, char *str, enum resval_cmpflag cmpflag)
 	return neg;
 }
 
+/**
+ * @brief Compare a comma-separated requested string list against
+ *        available string values using ANY/OR semantics.
+ *
+ * @param[in] res      available resource
+ * @param[in] req_str  comma-separated requested values
+ *
+ * @return 1 if at least one requested value matches
+ * @return 0 otherwise
+ */
 int
-gpu_cap_from_avail_cap(char *strcap)
+compare_res_strany(schd_resource *res, char *req_str)
 {
-	int is_cap_str = 0;
-	int len = strlen("sm_");
-
-	if (strncmp(strcap, "sm_", len) == 0)
-		is_cap_str = len;
-
-	try {
-		return std::stoi(strcap + is_cap_str);
-	} catch (std::exception &e) {
-		return 0;
-	}
-}
-
-int
-compare_res_gpu_cap_compute(int cuda_avail, int cuda_req)
-{
-	return cuda_avail >= cuda_req;
-}
-
-int
-compare_res_gpu_cap_sm(int cuda_avail, int cuda_req)
-{
-	if (cuda_avail / 10 != cuda_req / 10)
-		return 0;
-
-	if (cuda_avail % 10 >= cuda_req % 10)
-		return 1;
-
-	return 0;
-}
-
-int
-compare_res_gpu_cap(schd_resource *res, char *req_str)
-{
+	char *req;
 	char *rest;
-	char *req_token;
-	char *token_cap;
-	int underscore;
+	char *token;
 
-	int ret = 0;
-	int cap_avail = 0;
-	int cap_req = 0;
-	char *req = strdup(req_str);
+	if (res == NULL || req_str == NULL || res->str_avail == NULL)
+		return 0;
 
-	for (int i = 0; res->str_avail[i] != NULL; i++) {
-		if (res->str_avail[i][0] == '^')
-			continue;
+	req = strdup(req_str);
+	if (req == NULL)
+		return 0;
 
-		cap_avail = gpu_cap_from_avail_cap(res->str_avail[i]);
-
-		rest = req;
-		while ((req_token = strtok_r(rest, ",", &rest))) {
-			token_cap = strchr(req_token, '_');
-			if (token_cap == NULL)
-				continue;
-			underscore = ++token_cap - req_token;
-
-			try {
-				cap_req = std::stoi(token_cap);
-			} catch (std::exception &e) {
-				continue;
-			}
-
-			if(strncmp(req_token, "compute_", underscore) == 0) {
-				ret = compare_res_gpu_cap_compute(cap_avail, cap_req);
-				if (ret) {
-					free(req);
-					return ret;
-				}
-
-			} else if(strncmp(req_token, "code_", underscore) == 0) {
-				ret = compare_res_gpu_cap_sm(cap_avail, cap_req);
-				if (ret) {
-					free(req);
-					return ret;
-				}
-
-			} else if(strncmp(req_token, "sm_", underscore) == 0) {
-				ret = compare_res_gpu_cap_sm(cap_avail, cap_req);
-				if (ret) {
-					free(req);
-					return ret;
-				}
-			}
+	rest = req;
+	while ((token = strtok_r(rest, ",", &rest)) != NULL) {
+		if (compare_res_to_str(res, token, CMP_CASE)) {
+			free(req);
+			return 1;
 		}
 	}
 
 	free(req);
-	return ret;
+	return 0;
+}
+
+/**
+ * @brief Compare a comma-separated requested string list against
+ *        available string values using ALL/AND semantics.
+ *
+ * @param[in] res      available resource
+ * @param[in] req_str  comma-separated requested values
+ *
+ * @return 1 if all requested values match
+ * @return 0 otherwise
+ */
+int
+compare_res_strall(schd_resource *res, char *req_str)
+{
+	char *req;
+	char *rest;
+	char *token;
+	int num_tokens = 0;
+
+	if (res == NULL || req_str == NULL || res->str_avail == NULL)
+		return 0;
+
+	req = strdup(req_str);
+	if (req == NULL)
+		return 0;
+
+	rest = req;
+	while ((token = strtok_r(rest, ",", &rest)) != NULL) {
+		num_tokens++;
+
+		if (!compare_res_to_str(res, token, CMP_CASE)) {
+			free(req);
+			return 0;
+		}
+	}
+
+	free(req);
+
+	/* Do not treat an empty request as "all values matched". */
+	return num_tokens > 0;
 }
 
 /**
@@ -2359,64 +2342,72 @@ compare_res_gpu_cap(schd_resource *res, char *req_str)
  * @return	int
  * @retval	1	: for a match
  * @retval	0	: for not a match
- *
+ * 
+ * @note
+ *  from calling trace, both res and req cannot be NULL
+ *  see match_resource() for res, and check_avail_resources() for req 
+ *  if res is not defined it is substituted by dummy resources:
+ *      schd_resource *fres = false_res();
+ *      schd_resource *zres = zero_res();
+ *      schd_resource *ustr = unset_str_res();
+ *  dummy resources are now set to have the same type as req
  */
 int
 compare_non_consumable(schd_resource *res, resource_req *req)
 {
-	sch_resource_t avail;			/* amount of available resource */
+	if (res == NULL || req == NULL)
+		return 0;	/* sanity check */
 
-	if (res == NULL && req == NULL)
-		return 0;
+	/* exclude consumable resources */
 
-	if (req == NULL)
+	if (!res->type.is_non_consumable)
 		return 0;
 
 	if (!req->type.is_non_consumable)
 		return 0;
 
-	if (res != NULL) {
-		if (!res->type.is_non_consumable)
+	/* numerical values */
+
+	if (res->type.is_num) {
+
+		/* we need the defined resource to compare with */
+		if (res->type.is_dummy)
 			return 0;
 
-		if (res->type.is_string && res->str_avail == NULL)
-			return 0;
+		/* comparisons */
+		if (res->type.is_atleast)
+			return res->avail >= req->amount;
+
+		if (res->type.is_atmost)
+			return res->avail <= req->amount;
+			
+		return 0;
 	}
 
-	if (res->type.is_atleast) {
-		avail = res->avail;
-
-		if (avail == SCHD_INFINITY_RES)
-			avail = 0;
-
-		if (avail != SCHD_INFINITY_RES && req->amount != 0) {
-			if (avail < req->amount) {
-				return 0;
-			}
-			return 1;
-		}
-	}
+	/* boolean */
 
 	/* successful boolean match: (req = request res = resource on object)
+	 * req:   *   res: TRUE_FALSE
 	 * req: True  res: True
 	 * req: False res: False
-	 * req: False res: NULL
-	 * req:   *   res: TRUE_FALSE
 	 */
 	if (req->type.is_boolean) {
-		if (!req->amount && res == NULL)
-			return 1;
-		else if (req->amount && res == NULL)
-			return 0;
-		else if (res->avail == TRUE_FALSE)
+		if (res->avail == TRUE_FALSE)
 			return 1;
 		else
 			return res->avail == req->amount;
 	}
 
-	if (req->type.is_string && res != NULL) {
-		if (!strcmp(res->name, "gpu_cap"))
-			return compare_res_gpu_cap(res, req->res_str);
+	/* strings, string_arrays */
+
+	if (res->type.is_string && res->str_avail == NULL)
+		return 0;
+
+	if (res->type.is_string) {
+		if (res->type.is_strany)
+			return compare_res_strany(res, req->res_str);
+		if (res->type.is_strall)
+			return compare_res_strall(res, req->res_str);
 		/* 'host' to follow IETF rules; 'host' is case insensitive  */
 		if (!strcmp(res->name, "host"))
 			return compare_res_to_str(res, req->res_str, CMP_CASELESS);

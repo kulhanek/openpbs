@@ -1093,6 +1093,8 @@ find_check_resource(schd_resource *reslist, resource_req *resreq, unsigned int f
 
 		res->name = resreq->name;
 		res->def = resreq->def;
+		res->type = resreq->type;  /* make the dummy resource the same type as resreq */
+		res->type.is_dummy = true; /* set dummy flag */
 	}
 
 	if (res->indirect_res != NULL) {
@@ -1902,12 +1904,12 @@ check_prime_boundary(status *policy, resource_resv *resresv, struct schd_error *
  *
  * @return	schd_resource * (set to False)
  *
- * @par MT-safe: No
+ * @par MT-safe: Yes
  */
 schd_resource *
 false_res()
 {
-	static schd_resource *res = NULL;
+	static thread_local schd_resource *res = NULL;
 
 	if (res == NULL) {
 		res = new_resource();
@@ -1922,6 +1924,7 @@ false_res()
 
 	res->def = NULL;
 	res->name = NULL;
+	res->type.is_dummy = true;
 
 	return res;
 }
@@ -1934,12 +1937,12 @@ false_res()
  * @return	schd_resource *
  * @retval	NULL	: fail
  *
- * @par MT-safe: No
+ * @par MT-safe: Yes
  */
 schd_resource *
 unset_str_res()
 {
-	static schd_resource *res = NULL;
+	static thread_local schd_resource *res = NULL;
 
 	if (res == NULL) {
 		res = new_resource();
@@ -1962,6 +1965,7 @@ unset_str_res()
 
 	res->name = NULL;
 	res->def = NULL;
+	res->type.is_dummy = true;
 
 	return res;
 }
@@ -1972,11 +1976,13 @@ unset_str_res()
  *
  * @return	schd_resource *
  * @retval	NULL	: fail
+ * 
+ * @par MT-safe: Yes
  */
 schd_resource *
 zero_res()
 {
-	static schd_resource *res = NULL;
+	static thread_local schd_resource *res = NULL;
 
 	if (res == NULL) {
 		res = new_resource();
@@ -1991,6 +1997,7 @@ zero_res()
 
 	res->name = NULL;
 	res->def = NULL;
+	res->type.is_dummy = true;
 
 	return res;
 }

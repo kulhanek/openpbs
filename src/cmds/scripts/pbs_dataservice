@@ -1,287 +1,303 @@
 #!/bin/sh
 #
-# Copyright (C) 1994-2021 Altair Engineering, Inc.
-# For more information, contact Altair at www.altair.com.
+# OpenPBS data service controller with native systemd support.
 #
-# This file is part of both the OpenPBS software ("OpenPBS")
-# and the PBS Professional ("PBS Pro") software.
-#
-# Open Source License Information:
-#
-# OpenPBS is free software. You can redistribute it and/or modify it under
-# the terms of the GNU Affero General Public License as published by the
-# Free Software Foundation, either version 3 of the License, or (at your
-# option) any later version.
-#
-# OpenPBS is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public
-# License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# Commercial License Information:
-#
-# PBS Pro is commercially licensed software that shares a common core with
-# the OpenPBS software.  For a copy of the commercial license terms and
-# conditions, go to: (http://www.pbspro.com/agreement.html) or contact the
-# Altair Legal Department.
-#
-# Altair's dual-license business model allows companies, individuals, and
-# organizations to create proprietary derivative works of OpenPBS and
-# distribute them - whether embedded or bundled with other software -
-# under a commercial license agreement.
-#
-# Use of Altair's trademarks, including but not limited to "PBS™",
-# "OpenPBS®", "PBS Professional®", and "PBS Pro™" and Altair's logos is
-# subject to Altair's trademark licensing policies.
+# The traditional start/stop/status interface is retained for non-systemd
+# callers.  The systemd-* commands are private entry points used by the
+# pbs-dataservice.service unit and deliberately do NOT call
+# pbs_dataservice.bin -s start, because that path uses su(1), pg_ctl(1), and
+# pbs_ds_systemd to move processes between cgroups.
 
+set -u
 
-. ${PBS_CONF_FILE:-/etc/pbs.conf}
+. "${PBS_CONF_FILE:-/etc/pbs.conf}"
 
 PBS_TMPDIR="${PBS_TMPDIR:-${TMPDIR:-/var/tmp}}"
 export PBS_TMPDIR
 
 version_mismatch=3
-
-get_db_user() {
-	dbusr_file="${PBS_HOME}/server_priv/db_user"
-	if [ ! -f "${dbusr_file}" ]; then
-		echo "pbsdata"
-		return 0
-	else
-		cat "${dbusr_file}"
-		return $?
-	fi
-}
-
-
-# The get_port function does the following:
-# Setting PBS_DATA_SERVICE_PORT based on availability  in following order:
-# 1. Set PBS_DATA_SERVICE_PORT to port provided by pbs
-# 2. Set PBS_DATA_SERVICE_PORT to port provided by pbs.conf
-# 3. Set PBS_DATA_SERVICE_PORT to port provided by /etc/services
-# 4. Set PBS_DATA_SERVICE_PORT to default port
-
-get_port() {
-	if [ "$1" ]; then
-		PBS_DATA_SERVICE_PORT="$1"
-	else
-		if [ -z "${PBS_DATA_SERVICE_PORT}" ]; then
-			PBS_DATA_SERVICE_PORT=`awk '{if($1=="pbs_dataservice") {x=$2}} END {{split(x,a,"/")} {if ( a[2] == "tcp" ) print a[1]}}' /etc/services`
-		fi
-	fi
-
-	if [ -z "${PBS_DATA_SERVICE_PORT}" ]; then
-		PBS_DATA_SERVICE_PORT="15007"
-	fi
-}
-
-#Set PBS_DATA_SERVICE_PORT
-export PBS_DATA_SERVICE_PORT
-get_port $3
-
-DBPORT=${PBS_DATA_SERVICE_PORT}
-export DBPORT
-
-. ${PBS_EXEC}/libexec/pbs_db_env
-
-DBUSER=`get_db_user`
-if [ $? -ne 0 ]; then
-	echo "Could not retrieve PBS Data Service User"
-	exit 1
-fi
-export DBUSER
-
-if [ -z "${PBS_DATA_SERVICE_PORT}" ]; then
-	PBS_DATA_SERVICE_PORT="15007"
-fi
-
-CWD=`pwd`
-
-if [ -z "$(ls -A ${PBS_HOME}/datastore)" ]; then
-	echo "PBS Data Service not initialized"
-	exit 1
-fi
-
-# Check if DBUSER is defined and is non-root
-id=`id ${DBUSER} 2>&1`
-if [ $? -ne 0 ]; then
-	echo "User ${DBUSER} does not exist"
-	exit 1
-fi
-
-# Check that id is not 0
-id=`echo ${id} | cut -c5- | cut -d "(" -f1`
-if [ "${id}" = "0" ]; then
-	echo "PBS Data Service User should not be root"
-	exit 1
-fi
-
-# check I am root
-myid=`id | cut -c5- | cut -d "(" -f1 2>&1`
-if [ "${myid}" != "0" ]; then
-	echo "Please run as root"
-	exit 1
-fi
-
-# Check if DBUSER is enabled, try to cd to user home
-su - ${DBUSER} -c "cd" >/dev/null 2>&1
-if [ $? -ne 0 ]; then
-	echo "Unable to login as user ${DBUSER}. Is the user enabled/home directory accessible?"
-	exit 1
-fi
-
-# check that the user has not tampered with the data user manually
-if [ -d "${PBS_HOME}/datastore" ]; then
-	dbstore_owner=`ls -ld ${PBS_HOME}/datastore | awk '{print $3}'`
-	if [ "${dbstore_owner}" != "${DBUSER}" ]; then
-		echo "PBS DataService user value has been changed manually. Please revert back to the original value \"${dbstore_owner}\""
-		exit 1
-	fi
-else
-	echo "Path ${PBS_HOME}/datastore is not accessible by Data Service User ${DBUSER}"
-	exit 1
-fi
-
-#
-# The check_status function does the following:
-# Checks what LIBDB thinks about the database status. If LIBDB says db is up,
-# just return 0 (running locally) else check if the datastore directory can be
-# locked.
-# If we cannot obtain exclusive lock, then return 2
-#
-# Return code values:
-#	-1 - failed to execute
-#	0  - Data service running on local host
-#	1  - Data service definitely NOT running
-#	2  - Failed to obtain exclusive lock
-#
-
-check_status() {
-	cd ${PBS_HOME}/datastore
-	if [ $? -ne 0 ]; then
-		echo "Could not change directory to ${PBS_HOME}/datastore"
-		exit -1
-	fi
-
-	res=`${data_srv_bin} -s status 2>&1`
-	status=$?
-
-	if [ ${status} -eq 0 ]; then
-		echo "${res}" | grep 'no server running'
-		if [ $? -eq 0 ]; then
-			status=1
-		else
-			msg="PBS data service running locally"
-		fi
-	else
-		# check further only if LIBDB thinks no DATABASE is running
-		status=1
-		msg="PBS data service not running"
-		out=`${data_srv_mon} check 2>&1`
-		if [ $? -ne 0 ]; then
-			status=2
-			msg="${out}"
-		fi
-	fi
-
-	cd ${CWD}
-	export msg
-	return ${status}
-}
+CWD=$(pwd)
 
 data_srv_bin="${PBS_EXEC}/sbin/pbs_dataservice.bin"
 data_srv_mon="${PBS_EXEC}/sbin/pbs_ds_monitor"
 
-case "$1" in
-	start)
-		check_status
-		ret=$?
-		if [ ${ret} -eq 1 ]; then
-			echo "Starting PBS Data Service.."
-			${data_srv_bin} -s start
-			ret=$?
+get_db_user()
+{
+    dbusr_file="${PBS_HOME}/server_priv/db_user"
+    if [ -f "${dbusr_file}" ]; then
+        cat "${dbusr_file}"
+    else
+        echo "pbsdata"
+    fi
+}
 
-			if [ ${ret} -ne 0 ]; then
-				echo "Failed to start PBS Data Service"
-				if [ ${ret} -eq ${version_mismatch} ]; then
-					echo "PBS database needs to be upgraded."
-					echo "Consult the documentation/release notes for details."
-				fi
-			fi
-		else
-			echo "${msg} - cannot start"
-		fi
+get_port()
+{
+    if [ "${1:-}" ]; then
+        PBS_DATA_SERVICE_PORT=$1
+    elif [ -z "${PBS_DATA_SERVICE_PORT:-}" ]; then
+        PBS_DATA_SERVICE_PORT=$(awk '
+            $1 == "pbs_dataservice" {
+                split($2, a, "/");
+                if (a[2] == "tcp") port = a[1]
+            }
+            END { if (port != "") print port }
+        ' /etc/services 2>/dev/null)
+    fi
 
-		exit ${ret}
-		;;
+    PBS_DATA_SERVICE_PORT="${PBS_DATA_SERVICE_PORT:-15007}"
+    export PBS_DATA_SERVICE_PORT
+    DBPORT=${PBS_DATA_SERVICE_PORT}
+    export DBPORT
+}
 
-	stop)
-		check_status
-		ret=$?
-		if [ ${ret} -ne 0 ]; then
-			echo "${msg} - cannot stop"
-			exit 0
-		fi
+get_port "${3:-}"
 
-		# Check if PBS is running
-		${PBS_EXEC}/bin/qstat -Bf >/dev/null 2>&1
-		if [ $? -eq 0 ]; then
-			echo "PBS server is running. Cannot stop PBS Data Service now."
-			server_pid="`ps -ef | grep "pbs_server.bi[n]" | awk '{print $2}'`"
-			if [ -z "${server_pid}" ]; then
-				server_host="`${PBS_EXEC}/bin/qstat -Bf | grep 'server_host' | awk '{print $NF}'`"
-				if [ ! -z "${server_host}" ]; then
-					echo "PBS server is running on host ${server_host}."
-				fi
-				echo "Please check pbs.conf file to verify PBS is configured with correct server host value. Exiting."
-			fi
-			exit 1
-		fi
-		echo "Stopping PBS Data Service.."
+set +u
+# Locate the PostgreSQL installation selected when OpenPBS was built.
+. "${PBS_EXEC}/libexec/pbs_db_env"
+set -u
 
-		cd ${PBS_HOME}/datastore
-		if [ $? -ne 0 ]; then
-			echo "Could not change directory to ${PBS_HOME}/datastore"
-			exit 1
-		fi
-		${data_srv_bin} -s stop
-		ret=$?
-		cd ${CWD}
-		if [ ${ret} -ne 0 ]; then
-			echo "Failed to stop PBS Data Service"
-			echo "(Check if there are active connections to the data service)"
-		else
-			# check that we are able to acquire locks again, ie, monitor has died
-			i=0
-			check_status
-			sret=$?
-			while [ $i -lt 10 -a ${sret} -ne 1 ]
-			do
-				sleep 1
-				check_status
-				sret=$?
-				i=`expr $i + 1`
-			done
-			if [ ${sret} -ne 1 ]; then
-				echo "Failed to stop PBS Data Service"
-				exit 1
-			fi
-		fi
-		exit ${ret}
-		;;
+DBUSER=$(get_db_user) || {
+    echo "Could not retrieve PBS Data Service User" >&2
+    exit 1
+}
+export DBUSER
 
-	status)
-		check_status
-		ret=$?
-		echo "${msg}"
-		exit ${ret}
-		;;
+validate_common()
+{
+    if [ ! -d "${PBS_HOME}/datastore" ]; then
+        echo "PBS Data Service datastore ${PBS_HOME}/datastore does not exist" >&2
+        return 1
+    fi
 
-	*) echo "Usage: `basename $0` {start|stop|status}"
-		exit 1
-		;;
+    if [ -z "$(ls -A "${PBS_HOME}/datastore" 2>/dev/null)" ]; then
+        echo "PBS Data Service not initialized" >&2
+        return 1
+    fi
+
+    if ! id "${DBUSER}" >/dev/null 2>&1; then
+        echo "User ${DBUSER} does not exist" >&2
+        return 1
+    fi
+
+    dbuid=$(id -u "${DBUSER}") || return 1
+    if [ "${dbuid}" -eq 0 ]; then
+        echo "PBS Data Service User should not be root" >&2
+        return 1
+    fi
+
+    owner=$(stat -c '%U' "${PBS_HOME}/datastore" 2>/dev/null) || {
+        echo "Cannot stat ${PBS_HOME}/datastore" >&2
+        return 1
+    }
+    if [ "${owner}" != "${DBUSER}" ]; then
+        echo "PBS datastore owner is ${owner}, but configured Data Service user is ${DBUSER}" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+require_root()
+{
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "Please run as root" >&2
+        exit 1
+    fi
+}
+
+# Execute PostgreSQL as DBUSER without su/login/PAM.  This is the critical
+# difference from the legacy implementation: the process never leaves the
+# systemd service cgroup.  setpriv(1) execs the target after dropping IDs.
+exec_postgres_as_dbuser()
+{
+    setpriv_bin=$(command -v setpriv 2>/dev/null || true)
+    if [ -z "${setpriv_bin}" ]; then
+        echo "setpriv is required for native systemd data-service startup" >&2
+        exit 1
+    fi
+
+    postgres="${PGSQL_BIN}/postgres"
+    if [ ! -x "${postgres}" ]; then
+        echo "PostgreSQL server binary not found: ${postgres}" >&2
+        exit 1
+    fi
+
+    cd "${PBS_HOME}/datastore" || exit 1
+
+    # PGSQL_LIBSTR is generated by pbs_db_env and, on installations that need
+    # it, contains the environment prefix required for PostgreSQL libraries.
+    if [ -n "${PGSQL_LIBSTR:-}" ]; then
+        exec "${setpriv_bin}" \
+            --reuid="${DBUSER}" \
+            --regid="${DBUSER}" \
+            --init-groups \
+            /bin/sh -c "${PGSQL_LIBSTR} exec \"\$@\"" sh \
+            "${postgres}" -D "${PBS_HOME}/datastore" -p "${DBPORT}"
+    else
+        exec "${setpriv_bin}" \
+            --reuid="${DBUSER}" \
+            --regid="${DBUSER}" \
+            --init-groups \
+            "${postgres}" -D "${PBS_HOME}/datastore" -p "${DBPORT}"
+    fi
+}
+
+start_monitor()
+{
+    # pbs_ds_monitor intentionally forks/setsid itself.  This is harmless
+    # here: it is launched by this systemd service, performs no PAM/systemd
+    # session transition, and therefore remains in the service cgroup.
+    "${data_srv_mon}" monitor
+}
+
+wait_ready()
+{
+    timeout=${PBS_DS_START_TIMEOUT:-60}
+    i=0
+
+    if [ -x "${PGSQL_BIN}/pg_isready" ]; then
+        while [ "${i}" -lt "${timeout}" ]; do
+            if "${PGSQL_BIN}/pg_isready" -q -p "${DBPORT}" >/dev/null 2>&1; then
+                return 0
+            fi
+            i=$((i + 1))
+            sleep 1
+        done
+        echo "PBS Data Service did not become ready on port ${DBPORT} within ${timeout}s" >&2
+        return 1
+    fi
+
+    # Fallback for PostgreSQL installations without pg_isready.
+    while [ "${i}" -lt "${timeout}" ]; do
+        if [ -r "${PBS_HOME}/datastore/postmaster.pid" ]; then
+            pid=$(sed -n '1p' "${PBS_HOME}/datastore/postmaster.pid")
+            if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+                return 0
+            fi
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+
+    echo "PBS Data Service did not create a live postmaster within ${timeout}s" >&2
+    return 1
+}
+
+check_status()
+{
+    cd "${PBS_HOME}/datastore" || {
+        echo "Could not change directory to ${PBS_HOME}/datastore" >&2
+        return 255
+    }
+
+    res=$(${data_srv_bin} -s status 2>&1)
+    status=$?
+
+    if [ "${status}" -eq 0 ]; then
+        if printf '%s\n' "${res}" | grep -q 'no server running'; then
+            status=1
+            msg="PBS data service not running"
+        else
+            msg="PBS data service running locally"
+        fi
+    else
+        status=1
+        msg="PBS data service not running"
+        out=$(${data_srv_mon} check 2>&1)
+        if [ $? -ne 0 ]; then
+            status=2
+            msg=${out}
+        fi
+    fi
+
+    cd "${CWD}" || true
+    export msg
+    return "${status}"
+}
+
+case "${1:-}" in
+    systemd-start)
+        require_root
+        validate_common || exit 1
+
+        # Acquire the PBS datastore lock before PostgreSQL starts, matching
+        # the ordering of the legacy pbs_start_db() implementation.
+        if ! start_monitor; then
+            echo "Failed to start PBS Data Service monitor" >&2
+            exit 1
+        fi
+
+        # Stay in the foreground.  systemd now owns the actual postmaster PID.
+        exec_postgres_as_dbuser
+        ;;
+
+    systemd-wait)
+        require_root
+        validate_common || exit 1
+        wait_ready
+        exit $?
+        ;;
+
+    start)
+        # Legacy/non-systemd compatibility path.
+        require_root
+        validate_common || exit 1
+        check_status
+        ret=$?
+        if [ "${ret}" -eq 1 ]; then
+            echo "Starting PBS Data Service.."
+            "${data_srv_bin}" -s start
+            ret=$?
+            if [ "${ret}" -ne 0 ]; then
+                echo "Failed to start PBS Data Service"
+                if [ "${ret}" -eq "${version_mismatch}" ]; then
+                    echo "PBS database needs to be upgraded."
+                    echo "Consult the documentation/release notes for details."
+                fi
+            fi
+        else
+            echo "${msg} - cannot start"
+        fi
+        exit "${ret}"
+        ;;
+
+    stop)
+        # Legacy/non-systemd compatibility path.  Native systemd shutdown does
+        # not use this branch; systemd signals PostgreSQL only after pbs-server
+        # has stopped, according to unit ordering.
+        require_root
+        check_status
+        ret=$?
+        if [ "${ret}" -ne 0 ]; then
+            echo "${msg} - cannot stop"
+            exit 0
+        fi
+
+        "${PBS_EXEC}/bin/qstat" -Bf >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo "PBS server is running. Cannot stop PBS Data Service now."
+            exit 1
+        fi
+
+        echo "Stopping PBS Data Service.."
+        cd "${PBS_HOME}/datastore" || exit 1
+        "${data_srv_bin}" -s stop
+        ret=$?
+        cd "${CWD}" || true
+        exit "${ret}"
+        ;;
+
+    status)
+        check_status
+        ret=$?
+        echo "${msg}"
+        exit "${ret}"
+        ;;
+
+    *)
+        echo "Usage: $(basename "$0") {start|stop|status}" >&2
+        exit 1
+        ;;
 esac
-exit 1

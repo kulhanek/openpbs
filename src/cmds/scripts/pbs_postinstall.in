@@ -336,46 +336,14 @@ install_pbsinitd() {
 		echo "*** Registering PBS as a service."
 		case "$ostype" in
 		Linux)
-			if [ -d /etc/init.d ]; then
-				initscript="/etc/init.d/pbs"
-			else
-				initscript="/etc/rc.d/init.d/pbs"
-			fi
-			cp ${PBS_EXEC}/libexec/pbs_init.d $initscript
-			rm -f /etc/rc.d/rc?.d/*pbs
-			if [ -x /sbin/chkconfig ] ; then
-				/sbin/chkconfig --add pbs
-			elif [ -x /usr/sbin/update-rc.d ] ; then
-				/usr/sbin/update-rc.d pbs enable
-			else
-				ln -sf $initscript /etc/rc.d/rc0.d/K10pbs
-				ln -sf $initscript /etc/rc.d/rc1.d/K10pbs
-				ln -sf $initscript /etc/rc.d/rc2.d/K10pbs
-				ln -sf $initscript /etc/rc.d/rc3.d/S90pbs
-				ln -sf $initscript /etc/rc.d/rc4.d/K10pbs
-				ln -sf $initscript /etc/rc.d/rc5.d/S90pbs
-				ln -sf $initscript /etc/rc.d/rc6.d/K10pbs
-			fi
 			if [ -d /etc/profile.d ]; then
 				[ -f /etc/profile.d/pbs.csh ] || cp ${PBS_EXEC}/etc/pbs.csh /etc/profile.d
 				[ -f /etc/profile.d/pbs.sh ] || cp ${PBS_EXEC}/etc/pbs.sh /etc/profile.d
 			fi
 
-			pbs_unitfile="@_unitdir@/pbs.service"
+			pbs_unitfile="@_unitdir@/pbs.target"
 			if [ -f "${pbs_unitfile}" ]; then
-				presetdir="@_unitdir@-preset"
-				eval "sed -i 's;\(^[[:space:]]*SourcePath=\)[^[:space:]]*;\1${PBS_EXEC}/libexec/pbs_init.d;' \"$pbs_unitfile\""
-				eval "sed -i 's;\(^[[:space:]]*ExecStart=\)[^[:space:]]*;\1${PBS_EXEC}/libexec/pbs_init.d;' \"$pbs_unitfile\""
-				eval "sed -i 's;\(^[[:space:]]*ExecStop=\)[^[:space:]]*;\1${PBS_EXEC}/libexec/pbs_init.d;' \"$pbs_unitfile\""
-				if command -v systemctl >/dev/null 2>&1; then
-					systemctl enable pbs && systemctl daemon-reload
-					if [ $? != 0 -a -d "${presetdir}" ]; then
-						echo "*** Creating preset file ${presetdir}/95-pbs.preset"
-						echo "enable pbs.service" > "${presetdir}/95-pbs.preset"
-					fi
-				else
-					echo "*** Systemctl binary is not available; Failed to register PBS as a service"
-				fi
+				systemctl enable pbs.target && systemctl daemon-reload
 			fi
 			;;
 		esac

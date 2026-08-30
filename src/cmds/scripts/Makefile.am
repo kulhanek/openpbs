@@ -75,15 +75,22 @@ dist_sysprofile_DATA = \
 unitfiledir = @_unitdir@
 
 dist_unitfile_DATA = \
-	pbs.service
+	pbs-comm.service \
+	pbs-dataservice.service \
+	pbs-datastore-init.service \
+	pbs-mom.service \
+	pbs-prepare.service \
+	pbs-sched.service \
+	pbs-server-init.service \
+	pbs-server.service \
+	pbs.target
 
 dist_libexec_SCRIPTS = \
+        pbs-systemd-helper \
 	pbs_habitat \
-	pbs_init.d \
 	pbs_postinstall \
 	pbs_preuninstall \
-	pbs_posttrans \
-	pbs_reload
+	pbs_posttrans
 
 dist_bin_SCRIPTS = \
 	pbs_topologyinfo \
@@ -101,7 +108,6 @@ dist_sysconf_DATA = \
 	pbs.sh
 
 CLEANFILES = \
-	pbs_init.d \
 	limits.pbs_mom \
 	limits.post_services
 

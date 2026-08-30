@@ -324,6 +324,7 @@ verify_resc_type_and_flags(int resc_type, int *pflag_ir, int *presc_flag, const 
 		else
 			fchar = 'f';
 		if (autocorrect) {
+			*presc_flag |= ATR_DFLAG_CVTSLT;
 			snprintf(buf, buflen, "Erroneous to have flag '%c' without "
 					      "'h' on resource \"%s\"; adding 'h' flag.",
 				 fchar, rescname);

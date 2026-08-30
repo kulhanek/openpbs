@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenPBS execution daemon (MOM)
+Documentation=man:pbs_mom(8)
+Requires=pbs-prepare.service pbs-jobs.service
+Wants=pbs-comm.service
+After=pbs-prepare.service pbs-comm.service network-online.target
+PartOf=pbs.target
+
+[Service]
+Type=forking
+ExecCondition=@prefix@/libexec/pbs-systemd-helper enabled mom
+ExecStart=@prefix@/libexec/pbs-systemd-helper start-mom
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=90s
+TimeoutStopSec=180s
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=pbs.target

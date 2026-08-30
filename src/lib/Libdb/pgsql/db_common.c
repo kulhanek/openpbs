@@ -603,18 +603,6 @@ pbs_dataservice_control(char *cmd, char *pbs_ds_host, int pbs_ds_port)
 				close(fd);
 			}
 		}
-	} else if (rc == 0 && !(strcmp(cmd, PBS_DB_CONTROL_START))) {
-		/* launch systemd setup script */
-		sprintf(dbcmd, "%s/sbin/pbs_ds_systemd", pbs_conf.pbs_exec_path);
-		rc = system(dbcmd);
-		if (WIFEXITED(rc))
-			rc = WEXITSTATUS(rc);
-		if (rc != 0) {
-			if (errmsg_cache)
-				free(errmsg_cache);
-			errmsg_cache = strdup("systemd service setup for pbs failed");
-			return -1;
-		}
 	}
 	unlink(log_file);
 	unlink(errfile);

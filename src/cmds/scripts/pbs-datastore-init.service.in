@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenPBS PostgreSQL datastore initialization/upgrade
+Documentation=man:pbs(8)
+Requires=pbs-prepare.service
+After=pbs-prepare.service local-fs.target remote-fs.target
+Before=pbs-dataservice.service
+PartOf=pbs.target
+
+[Service]
+Type=oneshot
+ExecCondition=@prefix@/libexec/pbs-systemd-helper enabled server
+ExecStart=@prefix@/libexec/pbs-systemd-helper prepare-datastore
+RemainAfterExit=yes

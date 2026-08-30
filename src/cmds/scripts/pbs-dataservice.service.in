@@ -1,0 +1,29 @@
+[Unit]
+Description=OpenPBS PostgreSQL data service
+Documentation=man:pbs(8)
+Requires=pbs-datastore-init.service
+After=pbs-datastore-init.service network-online.target local-fs.target remote-fs.target
+Before=pbs-server-init.service pbs-server.service
+PartOf=pbs.target
+
+[Service]
+# pbs_dataservice systemd-start execs the real PostgreSQL postmaster in the
+# foreground after dropping privileges with setpriv(1). PostgreSQL therefore
+# remains the MainPID and all database children stay in this unit's cgroup.
+Type=exec
+ExecCondition=@prefix@/libexec/pbs-systemd-helper enabled server
+ExecStart=/bin/sh -c '. ${PBS_CONF_FILE:-/etc/pbs.conf}; exec "$PBS_EXEC/sbin/pbs_dataservice" systemd-start'
+
+# Activation completes only after PostgreSQL accepts connections.
+ExecStartPost=/bin/sh -c '. ${PBS_CONF_FILE:-/etc/pbs.conf}; exec "$PBS_EXEC/sbin/pbs_dataservice" systemd-wait'
+
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStartSec=90s
+TimeoutStopSec=180s
+OOMScoreAdjust=-1000
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=pbs-server.service

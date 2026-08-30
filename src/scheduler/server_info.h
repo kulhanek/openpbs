@@ -348,7 +348,17 @@ int add_resource_str_arr(schd_resource *res, char **str_arr, int allow_dup);
  */
 int add_resource_bool(schd_resource *r1, schd_resource *r2);
 
+/*
+ *      accumulate two "at least" resources together (r1 += r2)
+ *      by keeping the greater available value
+ */
 int add_resource_atleast(schd_resource *r1, schd_resource *r2);
+
+/*
+ *      accumulate two "at most" resources together (r1 += r2)
+ *      by keeping the smaller available value
+ */
+int add_resource_atmost(schd_resource *r1, schd_resource *r2);
 
 /*
  *	find_indirect_resource - follow the indirect resource pointers to

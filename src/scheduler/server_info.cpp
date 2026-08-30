@@ -1399,8 +1399,10 @@ add_resource_list(status *policy, schd_resource *r1, schd_resource *r2, unsigned
 						add_resource_str_arr(cur_r1, cur_r2->str_avail, 0);
 				} else if (cur_r1->type.is_boolean)
 					(void) add_resource_bool(cur_r1, cur_r2);
-				if (cur_r1->type.is_atleast)
+			    } else if (cur_r1->type.is_atleast) {
 					add_resource_atleast(cur_r1, cur_r2);
+				} else if (cur_r1->type.is_atmost) {
+					add_resource_atmost(cur_r1, cur_r2);
 			}
 		}
 	}
@@ -1585,20 +1587,60 @@ add_resource_bool(schd_resource *r1, schd_resource *r2)
 	return 1;
 }
 
+/**
+ * @brief
+ *   Host aggregation for >= semantics: retain the maximum value.
+ *
+ * @param[in] 	r1	-	lval : left side to add to
+ * @param[in]	r2 	-	rval : right side to add to
+ * 
+ * @return int
+ * @retval	1	: Ok
+ * @retval	0	: Error
+ * 
+ * @note
+ * called only from add_resource_list(), r1 and r2 cannot be NULL
+ */
 int
 add_resource_atleast(schd_resource *r1, schd_resource *r2)
 {
-	int r1val, r2val;
-	if (r1 == NULL)
-		return 0;
+    if (r1 == NULL || r2 == NULL)
+        return 0; /* sanity check - this should not happen */
 
-	if (!r1->type.is_atleast || (r2 != NULL && !r2->type.is_atleast))
-		return 0;
+	if (!r1->type.is_atleast || !r2->type.is_atleast)
+		return 0; /* wrong types */
 
+	if (r2->avail > r1->avail) /* keep MAX(r1,r2) */
+		r1->avail = r2->avail; 
 
-	if (r2->avail > r1->avail) {
+	return 1;
+}
+
+/**
+ * @brief
+ *   Host aggregation for <= semantics: retain the minimum value.
+ * 
+ * @param[in] 	r1	-	lval : left side to add to
+ * @param[in]	r2 	-	rval : right side to add to
+ * 
+ * @return int
+ * @retval	1	: Ok
+ * @retval	0	: Error
+ * 
+ * @note
+ * called only from add_resource_list(), r1 and r2 cannot be NULL
+ */
+int
+add_resource_atmost(schd_resource *r1, schd_resource *r2)
+{
+    if (r1 == NULL || r2 == NULL)
+        return 0; /* sanity check - this should not happen */
+
+	if (!r1->type.is_atmost || !r2->type.is_atmost)
+		return 0; /* wrong types */
+
+	if (r2->avail < r1->avail) /* keep MIN(r1,r2) */
 		r1->avail = r2->avail;
-	}
 
 	return 1;
 }
@@ -3142,7 +3184,7 @@ set_resource(schd_resource *res, const char *val, enum resource_fields field)
 			/* if val is a string, avail will be set to SCHD_INFINITY_RES */
 			res->avail = res_to_num(val, NULL);
 
-			if (res->type.is_atleast) {
+			if (res->type.is_atleast||res->type.is_atmost||res->type.is_strany||res->type.is_strall) {
 				res->type.is_consumable = 0;
 			}
 

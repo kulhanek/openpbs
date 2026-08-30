@@ -1392,7 +1392,7 @@ compare_resource_req(resource_req *req1, resource_req *req2)
 	else if (req1 == NULL || req2 == NULL)
 		return 0;
 
-	if (req1->type.is_consumable || req1->type.is_boolean || req1->type.is_atleast)
+	if (req1->type.is_num || req1->type.is_boolean)
 		return (req1->amount == req2->amount);
 
 	if (req1->type.is_string)
@@ -2255,6 +2255,83 @@ compare_res_to_str(schd_resource *res, char *str, enum resval_cmpflag cmpflag)
 }
 
 /**
+ * @brief Compare a comma-separated requested string list against
+ *        available string values using ANY/OR semantics.
+ *
+ * @param[in] res      available resource
+ * @param[in] req_str  comma-separated requested values
+ *
+ * @return 1 if at least one requested value matches
+ * @return 0 otherwise
+ */
+int
+compare_res_strany(schd_resource *res, char *req_str)
+{
+	char *req;
+	char *rest;
+	char *token;
+
+	if (res == NULL || req_str == NULL || res->str_avail == NULL)
+		return 0;
+
+	req = strdup(req_str);
+	if (req == NULL)
+		return 0;
+
+	rest = req;
+	while ((token = strtok_r(rest, ",", &rest)) != NULL) {
+		if (compare_res_to_str(res, token, CMP_CASE)) {
+			free(req);
+			return 1;
+		}
+	}
+
+	free(req);
+	return 0;
+}
+
+/**
+ * @brief Compare a comma-separated requested string list against
+ *        available string values using ALL/AND semantics.
+ *
+ * @param[in] res      available resource
+ * @param[in] req_str  comma-separated requested values
+ *
+ * @return 1 if all requested values match
+ * @return 0 otherwise
+ */
+int
+compare_res_strall(schd_resource *res, char *req_str)
+{
+	char *req;
+	char *rest;
+	char *token;
+	int num_tokens = 0;
+
+	if (res == NULL || req_str == NULL || res->str_avail == NULL)
+		return 0;
+
+	req = strdup(req_str);
+	if (req == NULL)
+		return 0;
+
+	rest = req;
+	while ((token = strtok_r(rest, ",", &rest)) != NULL) {
+		num_tokens++;
+
+		if (!compare_res_to_str(res, token, CMP_CASE)) {
+			free(req);
+			return 0;
+		}
+	}
+
+	free(req);
+
+	/* Do not treat an empty request as "all values matched". */
+	return num_tokens > 0;
+}
+
+/**
  * @brief
  *		compare_non_consumable - perform the == operation on a non consumable
  *				resource and resource_req
@@ -2265,62 +2342,72 @@ compare_res_to_str(schd_resource *res, char *str, enum resval_cmpflag cmpflag)
  * @return	int
  * @retval	1	: for a match
  * @retval	0	: for not a match
- *
+ * 
+ * @note
+ *  from calling trace, both res and req cannot be NULL
+ *  see match_resource() for res, and check_avail_resources() for req 
+ *  if res is not defined it is substituted by dummy resources:
+ *      schd_resource *fres = false_res();
+ *      schd_resource *zres = zero_res();
+ *      schd_resource *ustr = unset_str_res();
+ *  dummy resources are now set to have the same type as req
  */
 int
 compare_non_consumable(schd_resource *res, resource_req *req)
 {
-	sch_resource_t avail;			/* amount of available resource */
+	if (res == NULL || req == NULL)
+		return 0;	/* sanity check */
 
-	if (res == NULL && req == NULL)
-		return 0;
+	/* exclude consumable resources */
 
-	if (req == NULL)
+	if (!res->type.is_non_consumable)
 		return 0;
 
 	if (!req->type.is_non_consumable)
 		return 0;
 
-	if (res != NULL) {
-		if (!res->type.is_non_consumable)
+	/* numerical values */
+
+	if (res->type.is_num) {
+
+		/* we need the defined resource to compare with */
+		if (res->type.is_dummy)
 			return 0;
 
-		if (res->type.is_string && res->str_avail == NULL)
-			return 0;
+		/* comparisons */
+		if (res->type.is_atleast)
+			return res->avail >= req->amount;
+
+		if (res->type.is_atmost)
+			return res->avail <= req->amount;
+			
+		return 0;
 	}
 
-	if (res->type.is_atleast) {
-		avail = res->avail;
-
-		if (avail == SCHD_INFINITY_RES)
-			avail = 0;
-
-		if (avail != SCHD_INFINITY_RES && req->amount != 0) {
-			if (avail < req->amount) {
-				return 0;
-			}
-			return 1;
-		}
-	}
+	/* boolean */
 
 	/* successful boolean match: (req = request res = resource on object)
+	 * req:   *   res: TRUE_FALSE
 	 * req: True  res: True
 	 * req: False res: False
-	 * req: False res: NULL
-	 * req:   *   res: TRUE_FALSE
 	 */
 	if (req->type.is_boolean) {
-		if (!req->amount && res == NULL)
-			return 1;
-		else if (req->amount && res == NULL)
-			return 0;
-		else if (res->avail == TRUE_FALSE)
+		if (res->avail == TRUE_FALSE)
 			return 1;
 		else
 			return res->avail == req->amount;
 	}
 
-	if (req->type.is_string && res != NULL) {
+	/* strings, string_arrays */
+
+	if (res->type.is_string && res->str_avail == NULL)
+		return 0;
+
+	if (res->type.is_string) {
+		if (res->type.is_strany)
+			return compare_res_strany(res, req->res_str);
+		if (res->type.is_strall)
+			return compare_res_strall(res, req->res_str);
 		/* 'host' to follow IETF rules; 'host' is case insensitive  */
 		if (!strcmp(res->name, "host"))
 			return compare_res_to_str(res, req->res_str, CMP_CASELESS);

@@ -76,9 +76,8 @@
 %define _vendor_ver %(cat /etc/os-release | awk -F[=\\".] '/^VERSION_ID=/ {print \$3}')
 %define _vendor_id %(cat /etc/os-release | awk -F= '/^ID=/ {print \$2}')
 %endif
-%if ( 0%{?suse_version} >= 1210 ) || ( 0%{?rhel} >= 7 ) || ("x%{?_vendor_id}" == "xdebian" && 0%{?_vendor_ver} >= 8) || ("x%{?_vendor_id}" == "xubuntu" && 0%{?_vendor_ver} >= 16)
+# consider only systemd
 %define have_systemd 1
-%endif
 
 %global __python %{__python3}
 
@@ -518,14 +517,15 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %config(noreplace) %{_sysconfdir}/profile.d/pbs.*
 %exclude %{_sysconfdir}/profile.d/ptl.csh
 %exclude %{_sysconfdir}/profile.d/ptl.sh
-%config %{pbs_prefix}/lib/init.d/limits.pbs_mom
-%if %{defined have_systemd}
-%attr(644, root, root) %{_unitdir}/pbs.service
-%attr(644, root, root) %{pbs_prefix}/libexec/pbs_reload
-%else
-%exclude %{_unitdir}/pbs.service
-%exclude %{pbs_prefix}/libexec/pbs_reload
-%endif
+%attr(644, root, root) %{_unitdir}/pbs-comm.service
+%attr(644, root, root) %{_unitdir}/pbs-dataservice.service
+%attr(644, root, root) %{_unitdir}/pbs-datastore-init.service
+%attr(644, root, root) %{_unitdir}/pbs-mom.service
+%attr(644, root, root) %{_unitdir}/pbs-prepare.service
+%attr(644, root, root) %{_unitdir}/pbs-sched.service
+%attr(644, root, root) %{_unitdir}/pbs-server-init.service
+%attr(644, root, root) %{_unitdir}/pbs-server.service
+%attr(644, root, root) %{_unitdir}/pbs.target
 #%exclude %{pbs_prefix}/unsupported/*.pyc
 #%exclude %{pbs_prefix}/unsupported/*.pyo
 %exclude %{pbs_prefix}/lib*/*.a
@@ -546,12 +546,15 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %exclude %{_sysconfdir}/profile.d/ptl.csh
 %exclude %{_sysconfdir}/profile.d/ptl.sh
 %config %{pbs_prefix}/lib/init.d/limits.pbs_mom
-%if %{defined have_systemd}
-%attr(644, root, root) %{_unitdir}/pbs.service
-%else
-%exclude %{_unitdir}/pbs.service
-%endif
-%exclude %{pbs_prefix}/bin/mpiexec
+%attr(644, root, root) %{_unitdir}/pbs-comm.service
+%attr(644, root, root) %{_unitdir}/pbs-dataservice.service
+%attr(644, root, root) %{_unitdir}/pbs-datastore-init.service
+%attr(644, root, root) %{_unitdir}/pbs-mom.service
+%attr(644, root, root) %{_unitdir}/pbs-prepare.service
+%attr(644, root, root) %{_unitdir}/pbs-sched.service
+%attr(644, root, root) %{_unitdir}/pbs-server-init.service
+%attr(644, root, root) %{_unitdir}/pbs-server.service
+%attr(644, root, root) %{_unitdir}/pbs.target
 %exclude %{pbs_prefix}/bin/printjob_svr.bin
 %exclude %{pbs_prefix}/etc/pbs_dedicated
 %exclude %{pbs_prefix}/etc/pbs_holidays*
@@ -565,7 +568,6 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %exclude %{pbs_prefix}/sbin/pbs_ds_monitor
 %exclude %{pbs_prefix}/sbin/pbs_ds_password
 %exclude %{pbs_prefix}/sbin/pbs_ds_password.bin
-%exclude %{pbs_prefix}/sbin/pbs_ds_systemd
 %exclude %{pbs_prefix}/sbin/pbs_sched
 %exclude %{pbs_prefix}/sbin/pbs_server
 %exclude %{pbs_prefix}/sbin/pbs_server.bin
@@ -610,7 +612,6 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %exclude %{pbs_prefix}/sbin/pbs_ds_monitor
 %exclude %{pbs_prefix}/sbin/pbs_ds_password
 %exclude %{pbs_prefix}/sbin/pbs_ds_password.bin
-%exclude %{pbs_prefix}/sbin/pbs_ds_systemd
 %exclude %{pbs_prefix}/sbin/pbs_idled
 %exclude %{pbs_prefix}/sbin/pbs_mom
 %exclude %{pbs_prefix}/sbin/pbs_rcp
@@ -621,7 +622,13 @@ ${RPM_INSTALL_PREFIX:=%{pbs_prefix}}/libexec/pbs_posttrans \
 %exclude %{pbs_prefix}/sbin/pbsfs
 #%exclude %{pbs_prefix}/unsupported/*.pyc
 #%exclude %{pbs_prefix}/unsupported/*.pyo
-%exclude %{_unitdir}/pbs.service
+%exclude %{_unitdir}/pbs-comm.service
+%exclude %{_unitdir}/pbs-dataservice.service
+%exclude %{_unitdir}/pbs-mom.service
+%exclude %{_unitdir}/pbs-prepare.service
+%exclude %{_unitdir}/pbs-sched.service
+%exclude %{_unitdir}/pbs-server.service
+%exclude %{_unitdir}/pbs.target
 %exclude %{pbs_prefix}/lib*/*.a
 %exclude %{pbs_prefix}/include/*
 %exclude /etc/init.d/pbs

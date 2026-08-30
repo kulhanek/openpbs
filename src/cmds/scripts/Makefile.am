@@ -79,6 +79,7 @@ dist_unitfile_DATA = \
 	pbs-dataservice.service \
 	pbs-datastore-init.service \
 	pbs-mom.service \
+	pbs-jobs.service \
 	pbs-prepare.service \
 	pbs-sched.service \
 	pbs-server-init.service \

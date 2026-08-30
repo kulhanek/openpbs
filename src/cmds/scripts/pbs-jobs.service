@@ -3,9 +3,9 @@ Description=OpenPBS job cgroup owner
 Before=pbs-mom.service
 
 [Service]
-Type=oneshot
-ExecStart=/bin/true
-RemainAfterExit=yes
+Type=simple
+ExecStart=/usr/bin/sleep infinity
 Delegate=yes
 DelegateSubgroup=manager
+
 

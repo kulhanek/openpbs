@@ -25,5 +25,3 @@ OOMScoreAdjust=-1000
 Restart=on-failure
 RestartSec=2s
 
-[Install]
-WantedBy=pbs-server.service

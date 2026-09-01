@@ -86,81 +86,94 @@ create_pbs_environment() {
     fi
 
     umask 022
-    : > "$envfile"
-    chmod 0644 "$envfile"
-    [[ -n "$tz" ]] && printf 'TZ=%s\n' "$tz" >> "$envfile"
-    printf 'PATH=/bin:/usr/bin\n' >> "$envfile"
+    : > "$envfile" || return 1
+    chmod 0644 "$envfile" || return 1
+    if [[ -n "$tz" ]]; then
+        printf 'TZ=%s\n' "$tz" >> "$envfile" || return 1
+    fi
+    printf 'PATH=/bin://bin\n' >> "$envfile" || return 1
+    return 0
 }
 
 prepare_server_home() {
     local hooks_src dbuser_fl f
-    createdir "$PBS_HOME/server_logs" 0755
-    createdir "$PBS_HOME/spool" 1777
-    createdir "$PBS_HOME/server_priv" 0750
-    createdir "$PBS_HOME/server_priv/accounting" 0755
-    createdir "$PBS_HOME/server_priv/jobs" 0750
-    createdir "$PBS_HOME/server_priv/users" 0750
-    createdir "$PBS_HOME/server_priv/hooks" 0750
-    createdir "$PBS_HOME/server_priv/hooks/tmp" 0750
+    createdir "$PBS_HOME/server_logs" 0755 || return 1
+    createdir "$PBS_HOME/spool" 1777 || return 1
+    createdir "$PBS_HOME/server_priv" 0750 || return 1
+    createdir "$PBS_HOME/server_priv/accounting" 0755 || return 1
+    createdir "$PBS_HOME/server_priv/jobs" 0750 || return 1
+    createdir "$PBS_HOME/server_priv/users" 0750 || return 1
+    createdir "$PBS_HOME/server_priv/hooks" 0750 || return 1
+    createdir "$PBS_HOME/server_priv/hooks/tmp" 0750 || return 1
 
     hooks_src="$pbslibdir/python/altair/pbs_hooks"
     if [[ -d "$hooks_src" ]]; then
         shopt -s nullglob
         for f in "$hooks_src"/*; do
-            cp -p -- "$f" "$PBS_HOME/server_priv/hooks/"
+            cp -p -- "$f" "$PBS_HOME/server_priv/hooks/" || return 1
         done
         shopt -u nullglob
     fi
     rm -f "$PBS_HOME/server_priv/hooks/PBS_xeon_phi_provision.HK" \
-          "$PBS_HOME/server_priv/hooks/PBS_xeon_phi_provision.PY"
+          "$PBS_HOME/server_priv/hooks/PBS_xeon_phi_provision.PY" || return 1
 
     dbuser_fl="$PBS_HOME/server_priv/db_user"
     if [[ ! -e "$dbuser_fl" ]]; then
-        printf '%s' "${PBS_DATA_SERVICE_USER:-postgres}" > "$dbuser_fl"
-        chmod 0600 "$dbuser_fl"
+        printf '%s' "${PBS_DATA_SERVICE_USER:-postgres}" > "$dbuser_fl" || return 1
+        chmod 0600 "$dbuser_fl" || return 1
     fi
+    return 0
 }
 
 prepare_sched_home() {
-    createdir "$PBS_HOME/sched_logs" 0755
-    createdir "$PBS_HOME/sched_priv" 0750
+    createdir "$PBS_HOME/sched_logs" 0755 || return 1
+    createdir "$PBS_HOME/sched_priv" 0750 || return 1
 
-    [[ -e "$PBS_HOME/sched_priv/dedicated_time" ]] || cp -- "$PBS_EXEC/etc/pbs_dedicated" "$PBS_HOME/sched_priv/dedicated_time"
-    [[ -e "$PBS_HOME/sched_priv/holidays" ]] || cp -- "$PBS_EXEC/etc/pbs_holidays" "$PBS_HOME/sched_priv/holidays"
-    [[ -e "$PBS_HOME/sched_priv/resource_group" ]] || cp -- "$PBS_EXEC/etc/pbs_resource_group" "$PBS_HOME/sched_priv/resource_group"
+    if [[ ! -e "$PBS_HOME/sched_priv/dedicated_time" ]]; then
+        cp -- "$PBS_EXEC/etc/pbs_dedicated" "$PBS_HOME/sched_priv/dedicated_time" || return 1
+    fi
+    if [[ ! -e "$PBS_HOME/sched_priv/holidays" ]]; then
+        cp -- "$PBS_EXEC/etc/pbs_holidays" "$PBS_HOME/sched_priv/holidays" || return 1
+    fi
+    if [[ ! -e "$PBS_HOME/sched_priv/resource_group" ]]; then
+        cp -- "$PBS_EXEC/etc/pbs_resource_group" "$PBS_HOME/sched_priv/resource_group" || return 1
+    fi
     if [[ ! -e "$PBS_HOME/sched_priv/sched_config" ]]; then
-        cp -- "$PBS_EXEC/etc/pbs_sched_config" "$PBS_HOME/sched_priv/sched_config"
-        chmod 0644 "$PBS_HOME/sched_priv/sched_config"
+        cp -- "$PBS_EXEC/etc/pbs_sched_config" "$PBS_HOME/sched_priv/sched_config" || return 1
+        chmod 0644 "$PBS_HOME/sched_priv/sched_config" || return 1
     fi
 
     if [[ -n "${PBS_DAEMON_SERVICE_USER:-}" ]] && id "$PBS_DAEMON_SERVICE_USER" >/dev/null 2>&1; then
-        chown -R "$PBS_DAEMON_SERVICE_USER" "$PBS_HOME/sched_priv" "$PBS_HOME/sched_logs"
+        chown -R "$PBS_DAEMON_SERVICE_USER" "$PBS_HOME/sched_priv" "$PBS_HOME/sched_logs" || return 1
     fi
+    return 0
 }
 
 prepare_comm_home() {
-    createdir "$PBS_HOME/comm_logs" 0755
-    createdir "$PBS_HOME/spool" 1777
+    createdir "$PBS_HOME/comm_logs" 0755 || return 1
+    createdir "$PBS_HOME/spool" 1777 || return 1
+    return 0
 }
 
 prepare_mom_home() {
     local mompriv="$PBS_MOM_HOME/mom_priv" momconfig
-    createdir "$PBS_MOM_HOME" 0755
-    createdir "$PBS_MOM_HOME/aux" 0755
-    createdir "$PBS_MOM_HOME/checkpoint" 0700
-    createdir "$PBS_MOM_HOME/mom_logs" 0755
-    createdir "$mompriv" 0751
-    createdir "$mompriv/jobs" 0751
-    createdir "$mompriv/hooks" 0750
-    createdir "$mompriv/hooks/tmp" 0750
-    createdir "$PBS_MOM_HOME/spool" 1777
-    createdir "$PBS_MOM_HOME/undelivered" 1777
+    createdir "$PBS_MOM_HOME" 0755 || return 1
+    createdir "$PBS_MOM_HOME/aux" 0755 || return 1
+    createdir "$PBS_MOM_HOME/checkpoint" 0700 || return 1
+    createdir "$PBS_MOM_HOME/mom_logs" 0755 || return 1
+    createdir "$mompriv" 0751 || return 1
+    createdir "$mompriv/jobs" 0751 || return 1
+    createdir "$mompriv/hooks" 0750 || return 1
+    createdir "$mompriv/hooks/tmp" 0750 || return 1
+    createdir "$PBS_MOM_HOME/spool" 1777 || return 1
+    createdir "$PBS_MOM_HOME/undelivered" 1777 || return 1
 
     momconfig="$mompriv/config"
     if [[ ! -e "$momconfig" ]]; then
-        : > "$momconfig"
-        chmod 0644 "$momconfig"
+        : > "$momconfig" || return 1
+        chmod 0644 "$momconfig" || return 1
     fi
+    return 0
 }
 
 lc_host_name() {
@@ -234,13 +247,23 @@ pbs_version() {
 }
 
 prepare_home() {
-    createdir "$PBS_HOME" 0755
-    create_pbs_environment
+    createdir "$PBS_HOME" 0755 || return 1
+    create_pbs_environment || return 1
 
-    enabled_component server && prepare_server_home
-    enabled_component sched  && prepare_sched_home
-    enabled_component comm   && prepare_comm_home
-    enabled_component mom    && prepare_mom_home
+    if enabled_component server; then
+        prepare_server_home || return 1
+    fi
+    if enabled_component sched; then
+        prepare_sched_home || return 1
+    fi
+    if enabled_component comm; then
+        prepare_comm_home || return 1
+    fi
+    if enabled_component mom; then
+        prepare_mom_home || return 1
+    fi
+
+    return 0
 }
 
 # Host/PBS_HOME setup only. It is safe to execute repeatedly and is used both
@@ -262,10 +285,14 @@ prepare() {
 
     prepare_home || return 1
 
-    check_core "$PBS_HOME/server_priv"
-    check_core "$PBS_HOME/sched_priv"
-    check_core "$PBS_MOM_HOME/mom_priv"
-    enabled_component mom && check_maxsys
+    check_core "$PBS_HOME/server_priv" || return 1
+    check_core "$PBS_HOME/sched_priv" || return 1
+    check_core "$PBS_MOM_HOME/mom_priv" || return 1
+    if enabled_component mom; then
+        check_maxsys || return 1
+    fi
+
+    return 0
 }
 
 install_role() {

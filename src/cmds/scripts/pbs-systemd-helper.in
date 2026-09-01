@@ -11,7 +11,7 @@ usage() {
 
 init_conf() {
     local role=$1 server start_server start_sched start_comm start_mom
-    local exec_path=${PBS_EXEC:-/usr} home_path=${PBS_HOME:-/var/spool/pbs}
+    local exec_path=${PBS_EXEC:-@prefix@} home_path=${PBS_HOME:-/var/spool/pbs}
 
     # Package installation must never rewrite an administrator's configuration.
     [[ -e "$conf" ]] && return 0

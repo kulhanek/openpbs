@@ -367,6 +367,7 @@ AC_CONFIG_FILES([
 	src/cmds/scripts/pbs-sched.service
 	src/cmds/scripts/pbs-server-init.service
 	src/cmds/scripts/pbs-server.service
+	src/cmds/scripts/pbs-systemd-helper
 	src/cmds/scripts/pbsrun.poe
 	src/hooks/Makefile
 	src/iff/Makefile

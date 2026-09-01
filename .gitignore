@@ -281,6 +281,7 @@ src/cmds/scripts/pbs-prepare.service
 src/cmds/scripts/pbs-sched.service
 src/cmds/scripts/pbs-server-init.service
 src/cmds/scripts/pbs-server.service
+src/cmds/scripts/pbs-systemd-helper
 
 src/lib/Libdb/pgsql/pbs_db_utility
 

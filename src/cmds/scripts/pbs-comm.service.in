@@ -15,5 +15,3 @@ TimeoutStartSec=90s
 TimeoutStopSec=180s
 KillSignal=SIGTERM
 
-[Install]
-WantedBy=pbs.target

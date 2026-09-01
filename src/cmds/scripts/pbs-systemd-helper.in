@@ -1,0 +1,426 @@
+#!/bin/bash
+set -u
+
+conf=${PBS_CONF_FILE:-/etc/pbs.conf}
+action=${1:-}
+
+usage() {
+    echo "Usage: $0 {install-server|install-execution|install-client|enabled COMPONENT|prepare|prepare-datastore|prepare-server|start-server|start-mom|start-sched|stop-server}" >&2
+    exit 2
+}
+
+init_conf() {
+    local role=$1 server start_server start_sched start_comm start_mom
+    local exec_path=${PBS_EXEC:-@prefix@} home_path=${PBS_HOME:-/var/spool/pbs}
+
+    # Package installation must never rewrite an administrator's configuration.
+    [[ -e "$conf" ]] && return 0
+
+    case "$role" in
+        server)
+            server=$(hostname -s)
+            start_server=1; start_sched=1; start_comm=1; start_mom=0
+            ;;
+        execution)
+            server=CHANGE_THIS_TO_PBS_SERVER_HOSTNAME
+            start_server=0; start_sched=0; start_comm=0; start_mom=1
+            ;;
+        client)
+            server=CHANGE_THIS_TO_PBS_SERVER_HOSTNAME
+            start_server=0; start_sched=0; start_comm=0; start_mom=0
+            ;;
+        *)
+            echo "Unknown installation role: $role" >&2
+            return 2
+            ;;
+    esac
+
+    install -d -m 0755 "$(dirname "$conf")" || return 1
+    umask 022
+    {
+        printf 'PBS_SERVER=%s\n' "$server"
+        printf 'PBS_START_SERVER=%s\n' "$start_server"
+        printf 'PBS_START_SCHED=%s\n' "$start_sched"
+        printf 'PBS_START_COMM=%s\n' "$start_comm"
+        printf 'PBS_START_MOM=%s\n' "$start_mom"
+        printf 'PBS_EXEC=%s\n' "$exec_path"
+        printf 'PBS_HOME=%s\n' "$home_path"
+        printf 'PBS_CORE_LIMIT=unlimited\n'
+        if command -v scp >/dev/null 2>&1; then
+            printf 'PBS_SCP=%s\n' "$(command -v scp)"
+        fi
+    } > "$conf" || return 1
+    chmod 0644 "$conf"
+    echo "Created $conf for OpenPBS $role installation"
+}
+
+load_conf() {
+    if [[ ! -r "$conf" ]]; then
+        echo "PBS configuration is not readable: $conf" >&2
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    . "$conf"
+    : "${PBS_EXEC:?PBS_EXEC is undefined in $conf}"
+    : "${PBS_HOME:?PBS_HOME is undefined in $conf}"
+    PBS_MOM_HOME=${PBS_MOM_HOME:-$PBS_HOME}
+    pbslibdir="$PBS_EXEC/lib"
+    [[ -d "$pbslibdir" ]] || pbslibdir="$PBS_EXEC/lib64"
+    state_dir="$PBS_HOME/server_priv"
+    new_db_marker="$state_dir/.systemd-new-datastore"
+}
+
+createdir() {
+    local dir=$1 mode=$2
+    install -d -m "$mode" "$dir"
+}
+
+create_pbs_environment() {
+    local envfile="$PBS_HOME/pbs_environment" tz=""
+    [[ -e "$envfile" ]] && return 0
+
+    if [[ -n "${TZ:-}" ]]; then
+        tz=$TZ
+    elif [[ -r /etc/timezone ]]; then
+        read -r tz < /etc/timezone || true
+    fi
+
+    umask 022
+    : > "$envfile"
+    chmod 0644 "$envfile"
+    [[ -n "$tz" ]] && printf 'TZ=%s\n' "$tz" >> "$envfile"
+    printf 'PATH=/bin:/usr/bin\n' >> "$envfile"
+}
+
+prepare_server_home() {
+    local hooks_src dbuser_fl f
+    createdir "$PBS_HOME/server_logs" 0755
+    createdir "$PBS_HOME/spool" 1777
+    createdir "$PBS_HOME/server_priv" 0750
+    createdir "$PBS_HOME/server_priv/accounting" 0755
+    createdir "$PBS_HOME/server_priv/jobs" 0750
+    createdir "$PBS_HOME/server_priv/users" 0750
+    createdir "$PBS_HOME/server_priv/hooks" 0750
+    createdir "$PBS_HOME/server_priv/hooks/tmp" 0750
+
+    hooks_src="$pbslibdir/python/altair/pbs_hooks"
+    if [[ -d "$hooks_src" ]]; then
+        shopt -s nullglob
+        for f in "$hooks_src"/*; do
+            cp -p -- "$f" "$PBS_HOME/server_priv/hooks/"
+        done
+        shopt -u nullglob
+    fi
+    rm -f "$PBS_HOME/server_priv/hooks/PBS_xeon_phi_provision.HK" \
+          "$PBS_HOME/server_priv/hooks/PBS_xeon_phi_provision.PY"
+
+    dbuser_fl="$PBS_HOME/server_priv/db_user"
+    if [[ ! -e "$dbuser_fl" ]]; then
+        printf '%s' "${PBS_DATA_SERVICE_USER:-postgres}" > "$dbuser_fl"
+        chmod 0600 "$dbuser_fl"
+    fi
+}
+
+prepare_sched_home() {
+    createdir "$PBS_HOME/sched_logs" 0755
+    createdir "$PBS_HOME/sched_priv" 0750
+
+    [[ -e "$PBS_HOME/sched_priv/dedicated_time" ]] || cp -- "$PBS_EXEC/etc/pbs_dedicated" "$PBS_HOME/sched_priv/dedicated_time"
+    [[ -e "$PBS_HOME/sched_priv/holidays" ]] || cp -- "$PBS_EXEC/etc/pbs_holidays" "$PBS_HOME/sched_priv/holidays"
+    [[ -e "$PBS_HOME/sched_priv/resource_group" ]] || cp -- "$PBS_EXEC/etc/pbs_resource_group" "$PBS_HOME/sched_priv/resource_group"
+    if [[ ! -e "$PBS_HOME/sched_priv/sched_config" ]]; then
+        cp -- "$PBS_EXEC/etc/pbs_sched_config" "$PBS_HOME/sched_priv/sched_config"
+        chmod 0644 "$PBS_HOME/sched_priv/sched_config"
+    fi
+
+    if [[ -n "${PBS_DAEMON_SERVICE_USER:-}" ]] && id "$PBS_DAEMON_SERVICE_USER" >/dev/null 2>&1; then
+        chown -R "$PBS_DAEMON_SERVICE_USER" "$PBS_HOME/sched_priv" "$PBS_HOME/sched_logs"
+    fi
+}
+
+prepare_comm_home() {
+    createdir "$PBS_HOME/comm_logs" 0755
+    createdir "$PBS_HOME/spool" 1777
+}
+
+prepare_mom_home() {
+    local mompriv="$PBS_MOM_HOME/mom_priv" momconfig
+    createdir "$PBS_MOM_HOME" 0755
+    createdir "$PBS_MOM_HOME/aux" 0755
+    createdir "$PBS_MOM_HOME/checkpoint" 0700
+    createdir "$PBS_MOM_HOME/mom_logs" 0755
+    createdir "$mompriv" 0751
+    createdir "$mompriv/jobs" 0751
+    createdir "$mompriv/hooks" 0750
+    createdir "$mompriv/hooks/tmp" 0750
+    createdir "$PBS_MOM_HOME/spool" 1777
+    createdir "$PBS_MOM_HOME/undelivered" 1777
+
+    momconfig="$mompriv/config"
+    if [[ ! -e "$momconfig" ]]; then
+        : > "$momconfig"
+        chmod 0644 "$momconfig"
+    fi
+}
+
+lc_host_name() {
+    printf '%s\n' "$1" | cut -d, -f1 | cut -d: -f1 | cut -d. -f1 | tr '[:upper:]' '[:lower:]'
+}
+
+check_hostname() {
+    getent hosts "$1" >/dev/null 2>&1 || host "$1" >/dev/null 2>&1
+}
+
+get_server_hostname() {
+    local shn
+    if [[ -z "${PBS_PRIMARY:-}" || -z "${PBS_SECONDARY:-}" ]]; then
+        shn=${PBS_SERVER_HOST_NAME:-${PBS_SERVER:-}}
+    else
+        shn=$PBS_PRIMARY
+    fi
+    lc_host_name "$shn"
+}
+
+check_core() {
+    local dir=$1 file max=0 seq
+    [[ -d "$dir" ]] || return 0
+    shopt -s nullglob
+    for file in "$dir"/core_*; do
+        seq=${file##*_}
+        [[ $seq =~ ^[0-9]+$ ]] && (( 10#$seq > max )) && max=$((10#$seq))
+    done
+    for file in "$dir"/core "$dir"/core.[0-9]*; do
+        [[ -e "$file" ]] || continue
+        ((max++))
+        mv -- "$file" "$dir/core_$(printf '%04d' "$max")"
+        echo "Renamed stale core file $file" >&2
+    done
+    shopt -u nullglob
+}
+
+check_maxsys() {
+    local cfg="$PBS_MOM_HOME/mom_priv/config" val
+    [[ -f "$cfg" ]] || return 0
+    grep -q '^\$restrict_user_maxsysid' "$cfg" && return 0
+    [[ -f /etc/login.defs ]] || return 0
+    val=$(awk '$1 == "SYSTEM_UID_MAX" {print $2; exit}' /etc/login.defs)
+    [[ -n "$val" ]] || val=$(awk '$1 == "UID_MIN" {print $2-1; exit}' /etc/login.defs)
+    [[ -n "$val" ]] && printf '$restrict_user_maxsysid %s\n' "$val" >> "$cfg"
+}
+
+is_secondary_host() {
+    local me sec
+    [[ -n "${PBS_SECONDARY:-}" ]] || return 1
+    me=$(lc_host_name "${PBS_LEAF_NAME:-$(hostname)}")
+    sec=$(lc_host_name "$PBS_SECONDARY")
+    [[ "$me" == "$sec" ]]
+}
+
+enabled_component() {
+    local var value
+    case "$1" in
+        server) var=PBS_START_SERVER ;;
+        mom)    var=PBS_START_MOM ;;
+        sched)  var=PBS_START_SCHED ;;
+        comm)   var=PBS_START_COMM ;;
+        *) echo "Unknown component: $1" >&2; return 2 ;;
+    esac
+    value=${!var:-0}
+    [[ "$value" =~ ^[0-9]+$ ]] && (( value > 0 ))
+}
+
+pbs_version() {
+    "$PBS_EXEC/bin/qstat" --version | sed -e 's/^.* = //'
+}
+
+prepare_home() {
+    createdir "$PBS_HOME" 0755
+    create_pbs_environment
+
+    enabled_component server && prepare_server_home
+    enabled_component sched  && prepare_sched_home
+    enabled_component comm   && prepare_comm_home
+    enabled_component mom    && prepare_mom_home
+}
+
+# Host/PBS_HOME setup only. It is safe to execute repeatedly and is used both
+# by package installation and pbs-prepare.service.
+prepare() {
+    local server_hostname
+
+    [[ -d "$PBS_EXEC" ]] || { echo "PBS_EXEC does not exist: $PBS_EXEC" >&2; return 1; }
+
+    server_hostname=$(get_server_hostname)
+    if [[ -z "$server_hostname" || "$server_hostname" == CHANGE_THIS_TO_PBS_SERVER_HOSTNAME ]]; then
+        echo "Invalid PBS server hostname in $conf" >&2
+        return 1
+    fi
+    check_hostname "$server_hostname" || {
+        echo "PBS server hostname does not resolve: $server_hostname" >&2
+        return 1
+    }
+
+    prepare_home || return 1
+
+    check_core "$PBS_HOME/server_priv"
+    check_core "$PBS_HOME/sched_priv"
+    check_core "$PBS_MOM_HOME/mom_priv"
+    enabled_component mom && check_maxsys
+}
+
+install_role() {
+    local role=$1
+    init_conf "$role" || return 1
+    load_conf || return 1
+
+    # A client has no daemon state to initialize. For server/execution installs,
+    # create the persistent state immediately; pbs-prepare.service repeats this
+    # idempotently before daemons start.
+    [[ "$role" == client ]] && return 0
+    prepare_home
+}
+
+prepare_datastore() {
+    local rc version
+    enabled_component server || return 0
+
+    [[ -x "$PBS_EXEC/libexec/pbs_db_utility" ]] || {
+        echo "$PBS_EXEC/libexec/pbs_db_utility is missing" >&2
+        return 1
+    }
+    [[ -d "$state_dir" ]] || {
+        echo "PBS server state directory does not exist: $state_dir" >&2
+        return 1
+    }
+
+    "$PBS_EXEC/libexec/pbs_db_utility" install_db
+    rc=$?
+    case "$rc" in
+        0) : > "$new_db_marker" ;;
+        2)
+            rm -f "$new_db_marker"
+            "$PBS_EXEC/libexec/pbs_db_utility" upgrade_db || return $?
+            ;;
+        *)
+            echo "Error initializing the PBS datastore (pbs_db_utility rc=$rc)" >&2
+            return "$rc"
+            ;;
+    esac
+
+    version=$(pbs_version) || return 1
+    [[ -n "$version" ]] || { echo "Could not determine PBS version" >&2; return 1; }
+}
+
+prepare_server() {
+    local server server_started=0 tries rc version
+    enabled_component server || return 0
+
+    if [[ -f "$new_db_marker" ]]; then
+        echo "Initializing a new PBS server database"
+        "$PBS_EXEC/sbin/pbs_server" -t create >/dev/null
+        rc=$?
+        (( rc == 0 )) || { echo "pbs_server -t create failed (rc=$rc)" >&2; return "$rc"; }
+        server_started=1
+
+        tries=3
+        while (( tries >= 0 )); do
+            if "$PBS_EXEC/bin/qmgr" <<'QMGR_CREATE' >/dev/null
+create queue workq
+QMGR_CREATE
+            then
+                break
+            fi
+            ((tries--))
+            sleep 2
+        done
+        (( tries >= 0 )) || { echo "Could not create the default workq queue" >&2; return 1; }
+
+        "$PBS_EXEC/bin/qmgr" <<'QMGR_DEFAULTS' >/dev/null || return 1
+set queue workq queue_type = Execution
+set queue workq enabled = True
+set queue workq started = True
+set server default_queue = workq
+QMGR_DEFAULTS
+
+        if enabled_component mom; then
+            server=$(get_server_hostname)
+            server=${server%%.*}
+            if ! "$PBS_EXEC/bin/pbsnodes" localhost >/dev/null 2>&1 && \
+               ! "$PBS_EXEC/bin/pbsnodes" "$server" >/dev/null 2>&1; then
+                printf 'create node %s\n' "$server" | "$PBS_EXEC/bin/qmgr" >/dev/null || return 1
+            fi
+        fi
+    fi
+
+    (( server_started == 0 )) || "$PBS_EXEC/bin/qterm" || return 1
+
+    version=$(pbs_version) || return 1
+    printf '%s\n' "$version" > "$PBS_HOME/pbs_version" || return 1
+    rm -f "$new_db_marker"
+}
+
+start_server() {
+    local rc
+    "$PBS_EXEC/sbin/pbs_server"
+    rc=$?
+    if (( rc == 4 )); then
+        echo "pbs_server returned 4; retrying once after 30 seconds" >&2
+        sleep 30
+        "$PBS_EXEC/sbin/pbs_server"
+        return $?
+    fi
+    return "$rc"
+}
+
+start_mom() {
+    exec "$PBS_EXEC/sbin/pbs_mom" -p
+}
+
+start_sched() {
+    exec "$PBS_EXEC/sbin/pbs_sched"
+}
+
+stop_server() {
+    local pidfile pid active_server me
+    if is_secondary_host; then
+        pidfile="$PBS_HOME/server_priv/server.lock.secondary"
+    else
+        pidfile="$PBS_HOME/server_priv/server.lock"
+    fi
+    pid=$(cat "$pidfile" 2>/dev/null || true)
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+    kill -0 "$pid" 2>/dev/null || return 0
+
+    active_server=$("$PBS_EXEC/bin/qstat" -Bf 2>/dev/null | awk -F' = ' '/server_host = / {print $2; exit}')
+    active_server=$(lc_host_name "${active_server:-}")
+    me=$(lc_host_name "${PBS_LEAF_NAME:-$(hostname)}")
+
+    if [[ -n "$active_server" && "$me" == "$active_server" ]]; then
+        if [[ -r "$PBS_HOME/server_priv/qmgr_shutdown" ]]; then
+            "$PBS_EXEC/bin/qmgr" < "$PBS_HOME/server_priv/qmgr_shutdown" || true
+        fi
+        "$PBS_EXEC/bin/qterm" -t quick || kill -TERM "$pid"
+    else
+        kill -TERM "$pid"
+    fi
+}
+
+case "$action" in
+    install-server)    install_role server ;;
+    install-execution) install_role execution ;;
+    install-client)    install_role client ;;
+    *)
+        load_conf || exit 1
+        case "$action" in
+            enabled)           enabled_component "${2:?component required}" ;;
+            prepare)           prepare ;;
+            prepare-datastore) prepare_datastore ;;
+            prepare-server)    prepare_server ;;
+            start-server)      start_server ;;
+            start-mom)         start_mom ;;
+            start-sched)       start_sched ;;
+            stop-server)       stop_server ;;
+            *) usage ;;
+        esac
+        ;;
+esac

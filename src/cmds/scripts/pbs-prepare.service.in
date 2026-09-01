@@ -11,5 +11,3 @@ Type=oneshot
 ExecStart=@prefix@/libexec/pbs-systemd-helper prepare
 RemainAfterExit=yes
 
-[Install]
-WantedBy=pbs.target

@@ -41,11 +41,7 @@
 
 libinitdir = $(libdir)/init.d
 
-dist_libinit_DATA = \
-	limits.pbs_mom \
-	limits.pbs_mom.compat \
-	limits.post_services \
-	limits.post_services.compat 
+dist_libinit_DATA = 
 
 libmpidir = $(libdir)/MPI
 
@@ -87,11 +83,7 @@ dist_unitfile_DATA = \
 	pbs.target
 
 dist_libexec_SCRIPTS = \
-        pbs-systemd-helper \
-	pbs_habitat \
-	pbs_postinstall \
-	pbs_preuninstall \
-	pbs_posttrans
+        pbs-systemd-helper 
 
 dist_bin_SCRIPTS = \
 	pbs_topologyinfo \
@@ -108,12 +100,5 @@ dist_sysconf_DATA = \
 	pbs.csh \
 	pbs.sh
 
-CLEANFILES = \
-	limits.pbs_mom \
-	limits.post_services
+CLEANFILES = 
 
-limits.pbs_mom: $(srcdir)/limits.pbs_mom.compat
-	cp $? $@
-
-limits.post_services: $(srcdir)/limits.post_services.compat
-	cp $? $@

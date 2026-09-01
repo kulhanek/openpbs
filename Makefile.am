@@ -47,6 +47,4 @@ EXTRA_DIST = \
 	INSTALL \
 	LICENSE \
 	README.md \
-	autogen.sh \
-	openpbs-rpmlintrc \
-	openpbs.spec
+	autogen.sh

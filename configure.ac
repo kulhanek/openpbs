@@ -337,7 +337,6 @@ PBS_AC_PATCH_LIBTOOL
 PBS_AC_WITH_CJSON
 
 AC_CONFIG_FILES([
-	openpbs.spec
 	Makefile
 	buildutils/Makefile
 	doc/Makefile
@@ -359,9 +358,7 @@ AC_CONFIG_FILES([
 	src/cmds/pbsrun
 	src/cmds/scripts/Makefile
 	src/cmds/scripts/modulefile
-	src/cmds/scripts/pbs_habitat
 	src/cmds/scripts/pbs_poerun
-	src/cmds/scripts/pbs_postinstall
 	src/cmds/scripts/pbs-comm.service
 	src/cmds/scripts/pbs-dataservice.service
 	src/cmds/scripts/pbs-datastore-init.service
